@@ -35,8 +35,8 @@ print(f"Intento: {numero_intento}")
 print("-" * 40)
 
 # Rutas de los archivos
-Save_video_path = os.path.join(base_path, f"Videos_Fijaciones/{nombre_persona}")
-experiment_video_path = os.path.join(base_path, "Animacion.mp4")
+Save_video_path = f"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{nombre_persona}"
+experiment_video_path = "/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_1.mp4"
 
 # Crear el directorio de destino si no existe
 if not os.path.exists(Save_video_path):

@@ -345,7 +345,7 @@ def main():
     if len(sys.argv) > 1:
         video_path = sys.argv[1]
     else:
-        video_path = r"C:\Users\Victor\Documents\Tesis2\Videos\Experimento_1\Victor\ROI_videos_640x480\grabacion_experimento_ESP32CAM_1_ROI_640x480.mp4"
+        video_path = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Victor/ROI_videos_640x480/grabacion_experimento_ESP32CAM_1_ROI_640x480.mp4"
     
     process_video_comparison(video_path)
 

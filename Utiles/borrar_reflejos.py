@@ -6,10 +6,10 @@ import sys
 # --- 📂 CONFIGURACIÓN ---
 # ¡CUIDADO! Esta es la carpeta donde los videos serán MODIFICADOS PERMANENTEMENTE.
 # Asegúrate de tener una copia de seguridad antes de ejecutar el script.
-VIDEOS_FOLDER = r"C:\Users\Victor\Documents\Tesis2\Videos\Experimento_1\Victoria\ROI_videos_640x480"
+VIDEOS_FOLDER = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/prueba/ROI_videos_640x480"
 
 # 2. Ajustes del Inpainting (un umbral más bajo es más agresivo).
-REFLECTION_THRESHOLD = 150
+REFLECTION_THRESHOLD = 170
 # -------------------------
 
 def remove_reflections(color_frame):
