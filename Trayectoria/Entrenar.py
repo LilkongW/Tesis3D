@@ -1,0 +1,1 @@
+DATA_PATH = r'C:\Users\Victor\Documents\Tesis2\Trayectoria\Data'

@@ -1,0 +1,2 @@
+Video,Duracion_Total_s,Total_Frames,Frames_Con_Parpadeo,FPS,EAR_Minimo_Raw,EAR_Maximo_Raw,Total_Parpadeos_Detectados,Frecuencia_Parpadeo_BPM,Umbral_Aceleracion,Min_Duracion_Frames
+Data_Carlos_1.avi,17.9667,540,9,30.0000,0.0499,0.2672,3,10.0186,0.0080,3
