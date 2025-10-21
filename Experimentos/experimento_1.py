@@ -4,7 +4,6 @@ import time
 import numpy as np
 import queue
 from threading import Thread
-from concurrent.futures import ThreadPoolExecutor
 
 # Configuración del ESP32
 ESP32_URL = "http://192.168.0.19"

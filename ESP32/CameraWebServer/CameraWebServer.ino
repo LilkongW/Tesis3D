@@ -1,22 +1,21 @@
 #include "esp_camera.h"
 #include <WiFi.h>
 
-// ===========================
-// Select camera model in board_config.h
-// ===========================
-#include "board_config.h"
+
+#define CAMERA_MODEL_AI_THINKER // Has PSRAM
+#include "camera_pins.h"
 
 // ===========================
 // Enter your WiFi credentials
 // ===========================
-const char *ssid = "Victor";
-const char *password = "cotufa1997";
+const char* ssid = "VulturPruebas";
+const char* password = "STVultur*.";
 
 void startCameraServer();
-void setupLedFlash();
+void setupLedFlash(int pin);
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   Serial.setDebugOutput(true);
   Serial.println();
 
@@ -40,18 +39,18 @@ void setup() {
   config.pin_pwdn = PWDN_GPIO_NUM;
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
-  config.frame_size = FRAMESIZE_QVGA;
-  config.pixel_format = PIXFORMAT_JPEG;  // for streaming
+  config.frame_size = FRAMESIZE_UXGA;
+  config.pixel_format = PIXFORMAT_JPEG; // for streaming
   //config.pixel_format = PIXFORMAT_RGB565; // for face detection/recognition
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.jpeg_quality = 4;
   config.fb_count = 1;
-
+  
   // if PSRAM IC present, init with UXGA resolution and higher JPEG quality
   //                      for larger pre-allocated frame buffer.
-  if (config.pixel_format == PIXFORMAT_JPEG) {
-    if (psramFound()) {
+  if(config.pixel_format == PIXFORMAT_JPEG){
+    if(psramFound()){
       config.jpeg_quality = 4;
       config.fb_count = 2;
       config.grab_mode = CAMERA_GRAB_LATEST;
@@ -68,6 +67,11 @@ void setup() {
 #endif
   }
 
+#if defined(CAMERA_MODEL_ESP_EYE)
+  pinMode(13, INPUT_PULLUP);
+  pinMode(14, INPUT_PULLUP);
+#endif
+
   // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
@@ -75,28 +79,23 @@ void setup() {
     return;
   }
 
-  sensor_t *s = esp_camera_sensor_get();
-  // initial sensors are flipped vertically and colors are a bit saturated
-  if (s->id.PID == OV3660_PID) {
-    s->set_vflip(s, 1);        // flip it back
-    s->set_brightness(s, 2);   // up the brightness just a bit
-    s->set_saturation(s, -2);  // lower the saturation
-  }
+  sensor_t * s = esp_camera_sensor_get();
 
   // drop down frame size for higher initial frame rate
-  if (config.pixel_format == PIXFORMAT_JPEG) {
+  if(config.pixel_format == PIXFORMAT_JPEG){
     s->set_framesize(s, FRAMESIZE_QVGA);
+    s->set_contrast(s, 2); 
   }
+
 
 // Setup LED FLash if LED pin is defined in camera_pins.h
 #if defined(LED_GPIO_NUM)
-  setupLedFlash();
+  setupLedFlash(LED_GPIO_NUM);
 #endif
 
   WiFi.begin(ssid, password);
   WiFi.setSleep(false);
 
-  Serial.print("WiFi connecting");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -109,6 +108,8 @@ void setup() {
   Serial.print("Camera Ready! Use 'http://");
   Serial.print(WiFi.localIP());
   Serial.println("' to connect");
+
+  
 }
 
 void loop() {

@@ -1,208 +1,163 @@
 import cv2
 import requests
-import time
-import os
+import datetime
+import os # Importar para manejo de rutas de archivo
 
-# Configuración
-ESP32_IP = "192.168.1.109"
-URL = f"http://{ESP32_IP}"
-
-# Variables de control
+# ESP32 URL
+URL = "http://192.168.0.19"
 AWB = True
+
+# --- Variables Globales para Grabación ---
 recording = False
 video_writer = None
-frame_count = 0
-start_time = None
-CROP_PIXELS = 20
+OUTPUT_FOLDER = "grabaciones"  # Carpeta donde se guardarán los videos
+# El FPS debe ser consistente. Si el stream del ESP32 no es fijo, 15 FPS es un valor seguro.
+FPS = 30 
 
-# Fix para Wayland
-os.environ['QT_QPA_PLATFORM'] = 'xcb'
+
+# Face recognition and opencv setup
+# Asegúrate de que el URL esté correcto y el stream esté activo
+cap = cv2.VideoCapture(URL + ":81/stream")
+
 
 def set_resolution(url: str, index: int = 1, verbose: bool = False):
-    """Cambiar resolución de la cámara"""
     try:
         if verbose:
-            resolutions = {
-                10: "UXGA (1600x1200)",
-                9: "SXGA (1280x1024)",
-                8: "XGA (1024x768)",
-                7: "SVGA (800x600)",
-                6: "VGA (640x480)",
-                5: "CIF (400x296)",
-                4: "QVGA (320x240)",
-                3: "HQVGA (240x176)",
-                0: "QQVGA (160x120)"
-            }
-            print("\n📐 Resoluciones disponibles:")
-            for idx, res in resolutions.items():
-                print(f"  {idx}: {res}")
+            resolutions = "10: UXGA(1600x1200)\n9: SXGA(1280x1024)\n8: XGA(1024x768)\n7: SVGA(800x600)\n6: VGA(640x480)\n5: CIF(400x296)\n4: QVGA(320x240)\n3: HQVGA(240x176)\n0: QQVGA(160x120)"
+            print("Resoluciones disponibles:\n{}".format(resolutions))
 
         if index in [10, 9, 8, 7, 6, 5, 4, 3, 0]:
-            response = requests.get(f"{url}/control?var=framesize&val={index}", timeout=2)
-            if response.status_code == 200:
-                print(f"✓ Resolución cambiada a índice {index}")
-                return True
+            requests.get(url + "/control?var=framesize&val={}".format(index))
         else:
-            print("✗ Índice inválido")
-            return False
-    except Exception as e:
-        print(f"✗ Error cambiando resolución: {e}")
-        return False
+            print("Índice incorrecto.")
+    except:  # noqa: E722
+        print("SET_RESOLUTION: Algo salió mal.")
 
-def set_awb(url: str, awb: bool):
-    """Toggle Auto White Balance"""
+
+def set_quality(url: str, value: int = 1, verbose: bool = False):
+    try:
+        if value >= 10 and value <= 63:
+            requests.get(url + "/control?var=quality&val={}".format(value))
+    except:  # noqa: E722
+        print("SET_QUALITY: Algo salió mal.")
+
+
+def set_contrast(url: str, value: int = 0):
+    try:
+        # El contraste normalmente va de -2 a 2, pero en algunos ESP32 puede ser de 0 a 4
+        # Ajustamos para que 0 sea el valor por defecto
+        if value >= -2 and value <= 2:
+            requests.get(url + "/control?var=contrast&val={}".format(value))
+            print(f"Contraste establecido a: {value}")
+        else:
+            print("Valor de contraste no válido. Debe estar entre -2 y 2")
+    except:  # noqa: E722
+        print("SET_CONTRAST: Algo salió mal.")
+
+
+def set_awb(url: str, awb: int = 1):
     try:
         awb = not awb
-        requests.get(f"{url}/control?var=awb&val={1 if awb else 0}", timeout=2)
-        print(f"✓ AWB: {'ON' if awb else 'OFF'}")
-        return awb
-    except Exception as e:
-        print(f"✗ Error en AWB: {e}")
-        return awb
+        requests.get(url + "/control?var=awb&val={}".format(1 if awb else 0))
+    except:  # noqa: E722
+        print("SET_AWB: Algo salió mal.")
+    return awb
 
-def main():
-    global AWB, recording, video_writer, frame_count, start_time
-    
-    print("═══════════════════════════════════════")
-    print("  ESP32-CAM WebServer Viewer")
-    print("═══════════════════════════════════════")
-    print(f"  Conectando a: {URL}")
-    print("═══════════════════════════════════════\n")
 
-    time.sleep(1)
+# --- Función para iniciar la grabación ---
+def start_recording(frame_size):
+    global recording, video_writer
     
-    # Abrir stream
-    cap = cv2.VideoCapture(f"{URL}:81/stream")
-    
-    if not cap.isOpened():
-        print("✗ Error: No se pudo conectar al stream")
-        print(f"  Verifica que el ESP32-CAM esté en: {ESP32_IP}")
-        return
-    
-    print("✓ Stream conectado exitosamente\n")
-    
-    print("┌─ CONTROLES ─────────────────────────┐")
-    print("│  R - Cambiar resolución             │")
-    print("│  A - Toggle Auto White Balance      │")
-    print("│  G - Iniciar/Detener grabación      │")
-    print("│  ESC - Salir                        │")
-    print("└──────────────────────────────────────┘\n")
-    
-    # Variables para FPS
-    fps = 0
-    fps_counter = 0
-    fps_timer = time.time()
-    start_time = time.time()
-    
-    try:
-        while True:
-            ret, frame = cap.read()
+    # 1. Crear la carpeta de salida si no existe
+    if not os.path.exists(OUTPUT_FOLDER):
+        os.makedirs(OUTPUT_FOLDER)
+        
+    # 2. Generar nombre de archivo basado en la hora
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = os.path.join(OUTPUT_FOLDER, f"video_{timestamp}.mp4")
 
-            frame = frame[:, CROP_PIXELS:] 
-            gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            frame = gray_frame
-            if not ret:
-                print("⚠ Error leyendo frame")
-                time.sleep(0.1)
-                continue
-            
-            frame_count += 1
-            fps_counter += 1
-            
-            # Calcular FPS cada segundo
-            current_time = time.time()
-            if current_time - fps_timer >= 1.0:
-                fps = fps_counter / (current_time - fps_timer)
-                fps_counter = 0
-                fps_timer = current_time
-            
-            # Info overlay
-            info_text = f"FPS: {fps:.1f} | Frames: {frame_count}"
-            if recording:
-                info_text += " | REC"
-                cv2.circle(frame, (20, 20), 8, 255, -1) 
-            
-            # Texto con sombra
-            cv2.putText(frame, info_text, (12, 32),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, 0, 3) 
-            # Texto principal (blanco = 255)
-            # ❗ CORRECCIÓN 4: Usar 255 (intensidad blanca) para el texto
-            cv2.putText(frame, info_text, (10, 30),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, 255, 2) 
-            # Mostrar frame
-            cv2.imshow('ESP32-CAM Stream', frame)
-            
-            # Grabar si está activado
-            if recording and video_writer is not None:
-                video_writer.write(frame)
-            
-            # Procesar teclas
-            key = cv2.waitKey(1) & 0xFF
-            
-            if key == 27:  # ESC
-                print("\n✓ Saliendo...")
-                break
-                
-            elif key == ord('r') or key == ord('R'):
-                print("\n📐 Ingresa el índice de resolución (0-10):")
-                print("  Recomendados: 7=SVGA(800x600), 6=VGA(640x480), 4=QVGA(320x240)")
-                try:
-                    idx = int(input("Índice: "))
-                    if set_resolution(URL, index=idx, verbose=True):
-                        # Reiniciar captura
-                        cap.release()
-                        time.sleep(1)
-                        cap = cv2.VideoCapture(f"{URL}:81/stream")
-                        print("✓ Stream reiniciado\n")
-                except ValueError:
-                    print("✗ Entrada inválida\n")
-                
-        
-                
-            elif key == ord('a') or key == ord('A'):
-                AWB = set_awb(URL, AWB)
-                
-            elif key == ord('g') or key == ord('G'):
-                if not recording:
-                    # Iniciar grabación
-                    timestamp = time.strftime("%Y%m%d_%H%M%S")
-                    filename = f"video_{timestamp}.avi"
-                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-                    h, w = frame.shape[:2]
-                    video_writer = cv2.VideoWriter(filename, fourcc, 20.0, (w, h))
-                    recording = True
-                    print(f"\n🔴 Grabación iniciada: {filename}")
-                else:
-                    # Detener grabación
-                    recording = False
-                    if video_writer is not None:
-                        video_writer.release()
-                        video_writer = None
-                    print("⏹ Grabación detenida\n")
+    # 3. Definir el codec (ej. 'mp4v' para .mp4 o 'XVID')
+    # Nota: Es crucial tener codecs compatibles con tu instalación de OpenCV
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v') 
     
-    except KeyboardInterrupt:
-        print("\n✓ Interrumpido por usuario (Ctrl+C)")
-    except Exception as e:
-        print(f"\n✗ Error: {e}")
-    finally:
-        # Limpiar
-        if recording and video_writer is not None:
-            video_writer.release()
-            print("✓ Video guardado")
-        
-        cap.release()
-        cv2.destroyAllWindows()
-        
-        # Estadísticas
-        total_time = time.time() - start_time
-        print("\n═══════════════════════════════════════")
-        print("  ESTADÍSTICAS FINALES")
-        print("═══════════════════════════════════════")
-        print(f"  Frames totales: {frame_count}")
-        print(f"  Tiempo total: {total_time:.2f} segundos")
-        if total_time > 0:
-            print("  FPS promedio: {frame_count/total_time:.2f}")
-        print("═══════════════════════════════════════\n")
+    # 4. Inicializar VideoWriter
+    video_writer = cv2.VideoWriter(filename, fourcc, FPS, frame_size)
+    recording = True
+    print(f"\n--- INICIANDO GRABACIÓN: {filename} ---")
+
+# --- Función para detener la grabación ---
+def stop_recording():
+    global recording, video_writer
+    if video_writer is not None:
+        video_writer.release()
+        video_writer = None
+        recording = False
+        print("--- GRABACIÓN DETENIDA ---")
+
 
 if __name__ == "__main__":
-    main()
+    # CONFIGURACIÓN INICIAL: Establecer resolución VGA y contraste 0
+    # Obtener el tamaño del frame después de inicializar la cámara
+    if cap.isOpened():
+        ret, frame = cap.read()
+        if ret:
+            height, width, _ = frame.shape
+            frame_size = (width, height)
+            print(f"Tamaño del frame: {width}x{height}")
+        else:
+            # Asumir una resolución VGA si la lectura falla
+            frame_size = (640, 480) 
+            print("Advertencia: No se pudo leer el primer frame. Asumiendo tamaño VGA (640x480) para la grabación.")
+    else:
+        print("Error: No se pudo conectar al stream. Saliendo.")
+        exit()
+
+    while True:
+        if cap.isOpened():
+            ret, frame = cap.read()
+
+            if not ret:
+                print("Error al leer el frame.")
+                break
+                
+
+                        
+            cv2.imshow("Stream del ESP32", frame)
+            
+            # --- Escribir el frame si se está grabando ---
+            if recording and video_writer is not None:
+                video_writer.write(frame)
+
+            key = cv2.waitKey(1)
+
+            if key == ord("r"):
+                idx = int(input("Select resolution index: "))
+                set_resolution(URL, index=idx, verbose=True)
+
+            elif key == ord("c"):
+                val = int(input("Set contrast (-2 to 2): "))
+                set_contrast(URL, value=val)
+
+            elif key == ord("a"):
+                AWB = set_awb(URL, AWB)
+
+            # --- NUEVA OPCIÓN: INICIAR/DETENER GRABACIÓN ---
+            elif key == ord("g"):
+                if not recording:
+                    start_recording(frame_size)
+                else:
+                    stop_recording()
+
+            elif key == 27:  # Tecla ESC
+                break
+        else:
+            print("Stream no abierto. Intentando reconectar...")
+            cap = cv2.VideoCapture(URL + ":81/stream")
+            cv2.waitKey(5000) # Espera 5 segundos antes de intentar de nuevo
+            
+    # --- Limpieza al salir ---
+    if recording:
+        stop_recording()
+    
+    cv2.destroyAllWindows()
+    cap.release()
