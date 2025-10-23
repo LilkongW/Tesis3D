@@ -3,19 +3,20 @@ import random
 import math
 import numpy as np
 import os
-import sys
 import time
 import csv
 
-# --- PARÁMETROS DE FILTRADO Y PREPROCESAMIENTO ---
-FIXED_THRESHOLD_VALUE = 86   # Umbral fijo para binarización
+# --- PARÁMETROS DE FILTRADO Y PREPROCESAMIENTO (ACTUALIZADOS) ---
+FIXED_THRESHOLD_VALUE = 75   # Umbral fijo (de debug_step_5)
 GAUSSIAN_KERNEL_SIZE = (7, 7)
-CLAHE_CLIP_LIMIT = 2.0       # Límite de clip para CLAHE
-MIN_PUPIL_AREA = 950
-MAX_PUPIL_AREA = 8200
-MAX_ELLIPSE_RATIO = 2.6  # Relación máxima entre ejes mayor y menor
+CLAHE_CLIP_LIMIT = 1.0       # Límite de clip (de debug_step_5)
+MIN_PUPIL_AREA = 1000        # (de debug_step_5)
+MAX_PUPIL_AREA = 10000       # (de debug_step_5)
+MORPH_KERNEL_SIZE = 5        # (N=2 -> (2*2)+1 = 5, de debug_step_5)
+# ------------------------------------------
+
 # --- PARÁMETRO DE ESTABILIDAD DEL MODELO ---
-MAX_INTERSECTION_DISTANCE = 50 # Distancia máxima en píxeles
+MAX_INTERSECTION_DISTANCE = 55 # Distancia máxima en píxeles
 # ------------------------------------------
 
 # --- VARIABLES DE ESTADO GLOBALES ---
@@ -24,7 +25,7 @@ model_centers = []
 stable_pupil_centers = []
 max_rays = 120
 prev_model_center_avg = (320, 240)
-max_observed_distance = 200
+max_observed_distance = 250
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 
@@ -52,9 +53,31 @@ def apply_fixed_binary_threshold(image, threshold_value):
     _, thresholded_image = cv2.threshold(image, threshold_value, 255, cv2.THRESH_BINARY_INV)
     return thresholded_image
 
+# --- FUNCIÓN DE PUNTO MÁS OSCURO (AÑADIDA DE DEBUG_STEP_5) ---
+def find_darkest_2x2(image):
+    """
+    Encuentra el bloque de 2x2 píxeles más oscuro en la imagen.
+    Devuelve la coordenada (x, y) de la esquina superior izquierda de ese bloque.
+    """
+    min_sum = 1021 
+    min_loc = (0, 0) # (x, y)
+    H, W = image.shape
+    
+    for y in range(H - 1):
+        for x in range(W - 1):
+            s = int(image[y, x])     + int(image[y+1, x]) + \
+                int(image[y, x+1])   + int(image[y+1, x+1])
+            
+            if s < min_sum:
+                min_sum = s
+                min_loc = (x, y)
+                
+    return min_loc
+
+# --- FUNCIÓN DE OPTIMIZACIÓN DE ÁNGULO (REEMPLAZADA CON DEBUG_STEP_5) ---
 def optimize_contours_by_angle(contours):
     """Filtra los puntos de un contorno basándose en el ángulo y la convexidad."""
-    if not contours or len(contours[0]) < 5:
+    if not isinstance(contours, list) or len(contours) < 1 or len(contours[0]) < 5:
         return np.array([], dtype=np.int32).reshape((-1, 1, 2))
 
     # Asegurarse de que el contorno tenga la forma correcta (N, 1, 2)
@@ -63,117 +86,51 @@ def optimize_contours_by_angle(contours):
     else:
         all_contours = contours[0]
 
-    spacing = max(1, int(len(all_contours) / 25))
+    spacing = max(1, int(len(all_contours)/25))
     filtered_points = []
-
-    # Asegurarse que el centroide tenga la forma (2,)
-    centroid = np.mean(all_contours, axis=0).flatten()
-
-    num_points = len(all_contours)
-    for i in range(num_points):
-        # Asegurarse que los puntos tengan la forma (2,)
-        current_point = all_contours[i].flatten()
-        prev_point = all_contours[(i - spacing + num_points) % num_points].flatten()
-        next_point = all_contours[(i + spacing) % num_points].flatten()
-
+    
+    # Calcular centroide
+    centroid = np.mean(all_contours, axis=0).reshape(2)
+    
+    for i in range(0, len(all_contours)):
+        current_point = all_contours[i].reshape(2)
+        prev_point = all_contours[i - spacing].reshape(2)
+        next_point = all_contours[(i + spacing) % len(all_contours)].reshape(2)
+        
         vec1 = prev_point - current_point
         vec2 = next_point - current_point
-
-        with np.errstate(invalid='ignore', divide='ignore'):
+        
+        with np.errstate(invalid='ignore'):
             norm_vec1 = np.linalg.norm(vec1)
             norm_vec2 = np.linalg.norm(vec2)
-
+            
             if norm_vec1 == 0 or norm_vec2 == 0:
                 continue
-
+                
             dot_product = np.dot(vec1, vec2)
-            # Asegurar que el valor esté en el rango [-1, 1] antes de acos
-            cosine_angle = np.clip(dot_product / (norm_vec1 * norm_vec2), -1.0, 1.0)
-            angle = np.arccos(cosine_angle)
+            # Evitar valores fuera de rango para arccos
+            dot_product = np.clip(dot_product / (norm_vec1 * norm_vec2), -1.0, 1.0)
+            angle = np.arccos(dot_product)
 
         vec_to_centroid = centroid - current_point
-
-        # Combinar vectores para verificar dirección hacia el centroide
-        combined_vec = (vec1 + vec2) / 2.0
-        norm_combined = np.linalg.norm(combined_vec)
-        norm_centroid_vec = np.linalg.norm(vec_to_centroid)
-
-        if norm_combined == 0 or norm_centroid_vec == 0: # Evitar vector cero
-             continue
-
-        # Producto punto normalizado (coseno del ángulo entre vector al centroide y vector promedio)
-        cos_angle_centroid = np.dot(vec_to_centroid, combined_vec) / (norm_centroid_vec * norm_combined)
-
-        # Queremos puntos donde el ángulo sea agudo (cos > 0), indicando convexidad hacia el centroide
-        if cos_angle_centroid > 0: # Equivalente a if angle < 90 degrees
-             filtered_points.append(all_contours[i]) # Append the original point shape (N, 1, 2)
-
-    if not filtered_points:
+        
+        if np.dot(vec_to_centroid, (vec1+vec2)) > 0: # Comprueba si apunta 'hacia adentro'
+            filtered_points.append(all_contours[i])
+    
+    if not filtered_points or len(filtered_points) < 5:
         return np.array([], dtype=np.int32).reshape((-1, 1, 2))
 
-    # filtered_points ya contiene elementos con forma (1, 2), np.array los apilará correctamente
-    return np.array(filtered_points, dtype=np.int32)
+    return np.array(filtered_points, dtype=np.int32).reshape((-1, 1, 2))
 
 
-def detect_and_select_pupil(gray_frame_clahe, threshold_value):
-    """
-    Detecta contornos y selecciona el mejor candidato a pupila siguiendo la secuencia:
-    Binarizar -> Encontrar Contornos -> Filtro Elipse -> Filtro Área -> Filtro Oscuridad.
-    """
-    thresholded_image = apply_fixed_binary_threshold(gray_frame_clahe, threshold_value)
-    contours, _ = cv2.findContours(thresholded_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    best_pupil_contour = None
-    min_average_darkness = 256.0 # Usar float para la media
-
-    for contour in contours:
-        if len(contour) < 5: # ¿Suficientes puntos?
-            continue
-
-        try:
-            # Filtro 1: ¿Es elíptico?
-            ellipse = cv2.fitEllipse(contour)
-            center, axes, orientation = ellipse
-            major_axis, minor_axis = max(axes), min(axes)
-
-            if minor_axis <= 0: # Comprobar antes de dividir
-                continue
-            aspect_ratio = major_axis / minor_axis
-
-            if aspect_ratio > MAX_ELLIPSE_RATIO: # ¿Ratio correcto?
-                continue
-
-            # Filtro 2: ¿Área correcta?
-            contour_area = cv2.contourArea(contour)
-            if not (MIN_PUPIL_AREA <= contour_area <= MAX_PUPIL_AREA):
-                continue
-
-            # Filtro 3: ¿Es el más oscuro hasta ahora?
-            mask = np.zeros_like(gray_frame_clahe, dtype=np.uint8)
-            cv2.drawContours(mask, [contour], -1, 255, -1)
-            dark_pixels = gray_frame_clahe[mask == 255]
-
-            if dark_pixels.size == 0:
-                continue
-            average_darkness = np.mean(dark_pixels)
-
-            if average_darkness < min_average_darkness:
-                min_average_darkness = average_darkness
-                best_pupil_contour = contour # Mejor candidato actual
-
-        except cv2.error as e: # Capturar errores específicos de OpenCV
-             # print(f"fitEllipse error: {e} en contorno con {len(contour)} puntos")
-             continue
-        except Exception as e: # Capturar otros errores inesperados
-             # print(f"Error inesperado procesando contorno: {e}")
-             continue
-
-    return best_pupil_contour
+# --- FUNCIÓN 'detect_and_select_pupil' ELIMINADA ---
+# La nueva lógica está integrada directamente en 'process_frames'
 
 
 def process_frames(frame, gray_frame_clahe):
     """
     Procesa un frame y DEVUELVE un diccionario con datos, incluyendo el área del contorno.
+    (LÓGICA CENTRAL ACTUALIZADA)
     """
     global ray_lines, max_rays, prev_model_center_avg, max_observed_distance, stable_pupil_centers, model_centers
 
@@ -181,31 +138,54 @@ def process_frames(frame, gray_frame_clahe):
     data_dict = {
         "valid_deteccion": False, "sphere_center_x": None, "sphere_center_y": None, "sphere_center_z": None,
         "pupil_center_x": None, "pupil_center_y": None,
-        "darkest_pixel_x": None, "darkest_pixel_y": None,
+        "darkest_pixel_x": None, "darkest_pixel_y": None, # (Ahora se poblará con el anchor 2x2)
         "gaze_x": None, "gaze_y": None, "gaze_z": None,
         "ellipse_width": None, "ellipse_height": None, "ellipse_angle": None,
         "contour_area": None
     }
 
-    pupil_contour = detect_and_select_pupil(gray_frame_clahe, FIXED_THRESHOLD_VALUE)
+    # --- INICIO DE LA NUEVA LÓGICA (DE DEBUG_STEP_5) ---
+
+    # 1. Encontrar punto ancla (el más oscuro)
+    dark_point = find_darkest_2x2(gray_frame_clahe) # (x, y)
+    
+    # 2. Binarización y Morfología
+    morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MORPH_KERNEL_SIZE, MORPH_KERNEL_SIZE))
+    
+    thresholded_image_raw = apply_fixed_binary_threshold(gray_frame_clahe, FIXED_THRESHOLD_VALUE)
+    thresholded_image_closed = cv2.morphologyEx(thresholded_image_raw, cv2.MORPH_CLOSE, morph_kernel, iterations=1)
+    thresholded_image_final = cv2.morphologyEx(thresholded_image_closed, cv2.MORPH_OPEN, morph_kernel, iterations=1)
+
+    # 3. Filtrado de Contorno por Punto Ancla
+    contours, _ = cv2.findContours(thresholded_image_final.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    pupil_contour = None
+    for contour in contours:
+        
+        # Filtro 1: Área (de debug_step_5)
+        contour_area = cv2.contourArea(contour)
+        if not (MIN_PUPIL_AREA <= contour_area <= MAX_PUPIL_AREA):
+            continue # Descarta si es muy pequeño o muy grande
+
+        # Filtro 2: Punto Ancla (de debug_step_5)
+        if cv2.pointPolygonTest(contour, dark_point, False) >= 0:
+            pupil_contour = contour
+            data_dict["contour_area"] = contour_area # Guardar el área del contorno válido
+            break # Encontramos el que queríamos
+
+    # --- FIN DE LA NUEVA LÓGICA ---
 
     final_rotated_rect = None
     center_x, center_y = None, None
 
     if pupil_contour is not None:
+        # (El área ya se guardó en el bucle anterior)
 
-        # Calcular y guardar área del contorno
-        contour_area = cv2.contourArea(pupil_contour)
-        data_dict["contour_area"] = contour_area
+        # Guardar el ANCLA 2x2 como el "píxel más oscuro"
+        data_dict["darkest_pixel_x"] = dark_point[0]
+        data_dict["darkest_pixel_y"] = dark_point[1]
 
-        # Buscar Píxel más Oscuro
-        mask = np.zeros_like(gray_frame_clahe, dtype=np.uint8)
-        cv2.drawContours(mask, [pupil_contour], -1, 255, -1)
-        minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(gray_frame_clahe, mask=mask)
-        data_dict["darkest_pixel_x"] = minLoc[0]
-        data_dict["darkest_pixel_y"] = minLoc[1]
-
-        # Optimizar contorno
+        # Optimizar contorno (de debug_step_5)
         optimized_contour = optimize_contours_by_angle([pupil_contour])
 
         # Ajustar elipse final
@@ -225,7 +205,7 @@ def process_frames(frame, gray_frame_clahe):
             center_x_raw, center_y_raw = map(int, final_rotated_rect[0])
 
             # Suavizado de la posición (centro de la elipse)
-            stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=5)
+            stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=3)
             if stable_pupil_center:
                 center_x, center_y = stable_pupil_center # Usar centro suavizado
             else:
@@ -260,10 +240,11 @@ def process_frames(frame, gray_frame_clahe):
         ey = int(model_center_average[1] + 2 * dy)
         cv2.line(frame, (center_x, center_y), (ex, ey), (200, 255, 0), 3) # Línea extendida
 
-        # Dibujar píxel más oscuro (opcional)
+        # Dibujar punto ancla 2x2 (Punto rojo, de debug_step_5)
         if data_dict["darkest_pixel_x"] is not None:
              dark_pix_coords = (data_dict["darkest_pixel_x"], data_dict["darkest_pixel_y"])
-             cv2.circle(frame, dark_pix_coords, 3, (0, 0, 255), -1) # Punto rojo
+             # Dibujamos un círculo centrado en la esquina (x,y) del ancla 2x2
+             #cv2.circle(frame, dark_pix_coords, 5, (0, 0, 255), -1) 
 
         # Calcular vector de mirada 3D
         center_3d, direction_3d = compute_gaze_vector(center_x, center_y, model_center_average[0], model_center_average[1])
@@ -552,7 +533,7 @@ def process_video_from_path(video_path, video_name, csv_path):
         "video_name", "frame_number", "timestamp_ms", "valid_deteccion",
         "sphere_center_x", "sphere_center_y", "sphere_center_z",
         "pupil_center_x", "pupil_center_y",
-        "darkest_pixel_x", "darkest_pixel_y",
+        "darkest_pixel_x", "darkest_pixel_y", # (Ahora guardará el ancla 2x2)
         "gaze_x", "gaze_y", "gaze_z",
         "ellipse_width", "ellipse_height", "ellipse_angle",
         "contour_area"

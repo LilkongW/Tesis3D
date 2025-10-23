@@ -2,19 +2,22 @@ import cv2
 import numpy as np
 import os
 import time
-import math # <-- Añadido para la optimización de ángulos
+import math # Añadido de nuevo para la optimización de ángulos
 
 # --- PARÁMETROS DE PREPROCESAMIENTO ---
 GAUSSIAN_KERNEL_SIZE = (7, 7)
-INITIAL_THRESHOLD_VALUE = 86   # Valor inicial para el trackbar de Umbral
-INITIAL_CLAHE_CLIP_LIMIT = 2   # Valor inicial para el trackbar de CLAHE
+CLAHE_CLIP_LIMIT = 1.0 # Fijo
+INITIAL_THRESHOLD_VALUE = 70
+INITIAL_KERNEL_N = 2 # N=2 -> (2*2)+1 = 5. Usaremos un kernel de 5x5
 
-# --- PARÁMETROS DE FILTRADO DE CONTORNOS (De tu script original) ---
-MIN_PUPIL_AREA = 1200
-MAX_PUPIL_AREA = 10000
-MAX_ELLIPSE_RATIO = 2.8
+# --- PARÁMETROS DE FILTRADO (NUEVO) ---
+MIN_PUPIL_AREA = 1000
+MAX_PUPIL_AREA = 12000
 
-# --- FUNCIONES DE UTILIDAD (Solo las necesarias) ---
+# --- PARÁMETROS DE TRACKING (NUEVO) ---
+ROI_SEARCH_DIM = 120 # Tamaño (ancho y alto) del ROI de búsqueda, ej. 120x120
+
+# --- FUNCIONES DE UTILIDAD ---
 
 def crop_to_aspect_ratio(image, width=640, height=480):
     """Recorta y reescala la imagen a la relación de aspecto deseada."""
@@ -23,12 +26,10 @@ def crop_to_aspect_ratio(image, width=640, height=480):
     current_ratio = current_width / current_height
 
     if current_ratio > desired_ratio:
-        # La imagen es demasiado ancha
         new_width = int(desired_ratio * current_height)
         offset = (current_width - new_width) // 2
         cropped_img = image[:, offset:offset + new_width]
     else:
-        # La imagen es demasiado alta
         new_height = int(current_width / desired_ratio)
         offset = (current_height - new_height) // 2
         cropped_img = image[offset:offset + new_height, :]
@@ -36,17 +37,41 @@ def crop_to_aspect_ratio(image, width=640, height=480):
     return cv2.resize(cropped_img, (width, height))
 
 def apply_fixed_binary_threshold(image, threshold_value):
-    """Aplica umbral binario INVERSO: píxeles MÁS OSCUROS que el umbral se vuelven 255 (blanco)."""
+    """Aplica umbral binario INVERSO."""
     _, thresholded_image = cv2.threshold(image, int(threshold_value), 255, cv2.THRESH_BINARY_INV)
     return thresholded_image
+
+# --- FUNCIÓN DE PUNTO MÁS OSCURO (AÑADIDA) ---
+def find_darkest_2x2(image):
+    """
+    Encuentra el bloque de 2x2 píxeles más oscuro en la imagen.
+    Devuelve la coordenada (x, y) de la esquina superior izquierda de ese bloque.
+    """
+    min_sum = 1021 
+    min_loc = (0, 0) # (x, y)
+    H, W = image.shape
+    
+    # Asegurarse de que la imagen no esté vacía
+    if H < 2 or W < 2:
+        return (0, 0)
+        
+    for y in range(H - 1):
+        for x in range(W - 1):
+            s = int(image[y, x])     + int(image[y+1, x]) + \
+                int(image[y, x+1])   + int(image[y+1, x+1])
+            
+            if s < min_sum:
+                min_sum = s
+                min_loc = (x, y)
+                
+    return min_loc
 
 # --- FUNCIÓN DE OPTIMIZACIÓN DE ÁNGULO (AÑADIDA) ---
 def optimize_contours_by_angle(contours):
     """Filtra los puntos de un contorno basándose en el ángulo y la convexidad."""
-    if len(contours) < 1 or len(contours[0]) < 5:
+    if not isinstance(contours, list) or len(contours) < 1 or len(contours[0]) < 5:
         return np.array([], dtype=np.int32).reshape((-1, 1, 2))
 
-    # Asegurarse de que el contorno tenga la forma correcta (N, 1, 2)
     if len(contours[0].shape) == 2:
         all_contours = contours[0].reshape((-1, 1, 2))
     else:
@@ -55,7 +80,6 @@ def optimize_contours_by_angle(contours):
     spacing = max(1, int(len(all_contours)/25))
     filtered_points = []
     
-    # Calcular centroide
     centroid = np.mean(all_contours, axis=0).reshape(2)
     
     for i in range(0, len(all_contours)):
@@ -73,19 +97,16 @@ def optimize_contours_by_angle(contours):
             if norm_vec1 == 0 or norm_vec2 == 0:
                 continue
                 
-            # Calcular ángulo entre vectores
             dot_product = np.dot(vec1, vec2)
-            angle = np.arccos(dot_product / (norm_vec1 * norm_vec2))
+            dot_product = np.clip(dot_product / (norm_vec1 * norm_vec2), -1.0, 1.0)
+            angle = np.arccos(dot_product)
 
-        # Vector al centroide
         vec_to_centroid = centroid - current_point
         
-        # Filtro de convexidad (simplificado): el ángulo entre los vectores 
-        # y el vector al centroide debe ser agudo.
-        if np.dot(vec_to_centroid, (vec1+vec2)) > 0: # Comprueba si apunta 'hacia adentro'
-             filtered_points.append(all_contours[i])
+        if np.dot(vec_to_centroid, (vec1+vec2)) > 0: 
+            filtered_points.append(all_contours[i])
     
-    if not filtered_points:
+    if not filtered_points or len(filtered_points) < 5:
         return np.array([], dtype=np.int32).reshape((-1, 1, 2))
 
     return np.array(filtered_points, dtype=np.int32).reshape((-1, 1, 2))
@@ -96,9 +117,9 @@ def on_trackbar(val):
     """Función placeholder requerida por createTrackbar."""
     pass
 
-# --- FUNCIÓN PRINCIPAL DE DEBUG ---
-def debug_binarization(video_path):
-    """Procesa un video y muestra el original vs. el binarizado con un trackbar."""
+# --- FUNCIÓN PRINCIPAL DE DEBUG (Paso 5 con ROI) ---
+def debug_step_5_with_roi(video_path):
+    """Combina todo: Búsqueda de punto oscuro + Filtro + Optimización + ROI."""
     
     cap = cv2.VideoCapture(video_path)
 
@@ -112,18 +133,23 @@ def debug_binarization(video_path):
     
     frame_delay = int(1000 / fps)
     
-    print(f"Procesando video: {video_path}")
-    print("Mueve los trackbars para ajustar CLAHE y el Umbral.")
+    print(f"Procesando video (Paso 5 - Final con ROI): {video_path}")
+    print("Mueve los trackbars de 'Threshold' y 'Kernel Size'.")
     print("Presiona 'q' para salir, 'espacio' para pausar.")
 
     # --- Crear ventana y trackbars ---
-    window_name = "Debug Final (Elipse Optimizada | Binarizado)"
+    window_name = "Debug Final con Tracking (ROI) | Mascara Limpia"
     cv2.namedWindow(window_name)
     
-    # Trackbar para el Umbral
     cv2.createTrackbar("Threshold", window_name, INITIAL_THRESHOLD_VALUE, 255, on_trackbar)
-    # Trackbar para el Clip Limit de CLAHE
-    cv2.createTrackbar("Clip Limit", window_name, INITIAL_CLAHE_CLIP_LIMIT, 10, on_trackbar)
+    cv2.createTrackbar("Kernel Size (N)", window_name, INITIAL_KERNEL_N, 5, on_trackbar)
+    
+    # --- Crear objeto CLAHE (una sola vez) ---
+    clahe = cv2.createCLAHE(clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=(8, 8))
+    
+    # --- VARIABLES DE ESTADO DE TRACKING (NUEVO) ---
+    last_known_center = None
+    tracking_active = False # Empezamos en modo Detección
     
     while True:
         start_time = time.time()
@@ -133,96 +159,144 @@ def debug_binarization(video_path):
         if not ret:
             print(f"Video terminado: {video_path}")
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0) # Reiniciar el video
+            last_known_center = None # Reiniciar tracking
+            tracking_active = False
             continue
 
-        # --- 1. Preprocesamiento ---
+        # --- 1. Preprocesamiento (Completo) ---
         frame_cropped = crop_to_aspect_ratio(frame)
         frame_blurred = cv2.GaussianBlur(frame_cropped, GAUSSIAN_KERNEL_SIZE, 0)
         gray_frame_original = cv2.cvtColor(frame_blurred, cv2.COLOR_BGR2GRAY)
         
+        H, W = frame_cropped.shape[:2] # Obtenemos dimensiones 640x480
         
-        # --- 2. APLICAR CLAHE ---
-        current_clip_limit = max(1, cv2.getTrackbarPos("Clip Limit", window_name))
-        clahe = cv2.createCLAHE(clipLimit=float(current_clip_limit), tileGridSize=(8, 8))
+        # --- 2. APLICAR CLAHE (Completo) ---
         gray_frame_clahe = clahe.apply(gray_frame_original)
-
         
-        # --- 3. Binarización ---
-        current_threshold = cv2.getTrackbarPos("Threshold", window_name)
-        thresholded_image = apply_fixed_binary_threshold(gray_frame_clahe, current_threshold)
+        # --- LÓGICA DE ROI vs. DETECCIÓN COMPLETA (NUEVO) ---
+        roi_coords = (0, 0, W, H) 
+        offset = (0, 0)
         
-        
-        # --- 4. SELECCIÓN DEL CONTORNO MÁS OSCURO ---
-        contours, _ = cv2.findContours(thresholded_image.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        best_pupil_contour = None
-        min_average_darkness = 256
-        
-        for contour in contours:
-            contour_area = cv2.contourArea(contour)
+        if tracking_active and last_known_center is not None:
+            # --- Modo Tracking: Definir ROI ---
+            cx, cy = last_known_center
+            half_dim = ROI_SEARCH_DIM // 2
             
-            # Filtros 1, 2 y 3 (Area, Puntos, Forma)
-            if not (MIN_PUPIL_AREA <= contour_area <= MAX_PUPIL_AREA) or len(contour) < 5:
-                continue
+            x1 = max(0, cx - half_dim)
+            y1 = max(0, cy - half_dim)
+            x2 = min(W, cx + half_dim)
+            y2 = min(H, cy + half_dim)
+            
+            roi_coords = (x1, y1, x2, y2)
+            offset = (x1, y1)
+            
+            # Recortar la imagen CLAHE al ROI
+            roi_gray_clahe = gray_frame_clahe[y1:y2, x1:x2]
+        
+        else:
+            # --- Modo Detección: Usar imagen completa ---
+            roi_gray_clahe = gray_frame_clahe
+        
+        # Asegurarse de que el ROI no esté vacío
+        if roi_gray_clahe.size == 0:
+            roi_gray_clahe = gray_frame_clahe
+            roi_coords = (0, 0, W, H)
+            offset = (0, 0)
+            tracking_active = False
+            
+        # --- 3. ENCONTRAR PUNTO ANCLA (EL MÁS OSCURO) ---
+        dark_point_local = find_darkest_2x2(roi_gray_clahe) # (x, y) local
+        dark_point = (dark_point_local[0] + offset[0], dark_point_local[1] + offset[1]) # (x, y) global
+        
+        # --- 4. BINARIZACIÓN Y MORFOLOGÍA (Solo en el ROI) ---
+        current_threshold = cv2.getTrackbarPos("Threshold", window_name)
+        current_kernel_n = max(1, cv2.getTrackbarPos("Kernel Size (N)", window_name))
+        
+        kernel_size = (current_kernel_n * 2) + 1
+        morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+        
+        thresholded_image_raw = apply_fixed_binary_threshold(roi_gray_clahe, current_threshold)
+        thresholded_image_closed = cv2.morphologyEx(thresholded_image_raw, cv2.MORPH_CLOSE, morph_kernel, iterations=1)
+        thresholded_image_final = cv2.morphologyEx(thresholded_image_closed, cv2.MORPH_OPEN, morph_kernel, iterations=1)
 
-            try:
-                ellipse = cv2.fitEllipse(contour)
-                (center, axes, orientation) = ellipse
-                major_axis = max(axes); minor_axis = min(axes)
-                if minor_axis == 0: continue
-                aspect_ratio = major_axis / minor_axis
-                
-                if aspect_ratio <= MAX_ELLIPSE_RATIO:
-                    
-                    # Filtro de Oscuridad (Medido en imagen CLAHE)
-                    mask = np.zeros_like(gray_frame_clahe, dtype=np.uint8)
-                    cv2.drawContours(mask, [contour], -1, 255, -1)
-                    dark_pixels = gray_frame_clahe[mask == 255]
-                    
-                    if dark_pixels.size == 0: continue
-                    average_darkness = np.mean(dark_pixels)
-                    
-                    if average_darkness < min_average_darkness:
-                        min_average_darkness = average_darkness
-                        best_pupil_contour = contour
-                        
-            except Exception:
+        # --- 5. FILTRADO DE CONTORNO POR PUNTO ANCLA (Solo en el ROI) ---
+        contours, _ = cv2.findContours(thresholded_image_final.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        best_pupil_contour_local = None
+        best_pupil_contour_global = None
+        
+        for contour_local in contours:
+            
+            # --- FILTRO DE ÁREA ---
+            contour_area = cv2.contourArea(contour_local)
+            if not (MIN_PUPIL_AREA <= contour_area <= MAX_PUPIL_AREA):
                 continue 
 
-        # --- 5. OPTIMIZACIÓN Y VISUALIZACIÓN ---
+            # Filtro de punto ancla (local vs local)
+            if cv2.pointPolygonTest(contour_local, dark_point_local, False) >= 0:
+                best_pupil_contour_local = contour_local
+                best_pupil_contour_global = contour_local + (offset[0], offset[1]) # Guardar global
+                break 
+
+        # Preparar la visualización de la derecha (máscara)
+        final_bgr = cv2.cvtColor(thresholded_image_final, cv2.COLOR_GRAY2BGR) # Máscara (pequeña)
+
+        # --- 6. OPTIMIZACIÓN Y DIBUJO ---
+        if best_pupil_contour_global is not None:
+            # Dibujar el contorno seleccionado en la máscara (verde)
+            cv2.drawContours(final_bgr, [best_pupil_contour_local], -1, (0, 255, 0), 1)
+            
+            # Aplicar la optimización de ángulo al contorno GLOBAL
+            optimized_contour = optimize_contours_by_angle([best_pupil_contour_global])
+            
+            try:
+                final_ellipse = None
+                if len(optimized_contour) >= 5:
+                    final_ellipse = cv2.fitEllipse(optimized_contour)
+                else:
+                    final_ellipse = cv2.fitEllipse(best_pupil_contour_global)
+                
+                if final_ellipse:
+                    cv2.ellipse(frame_cropped, final_ellipse, (0, 255, 255), 2)
+                    
+                    # --- ACTUALIZAR ESTADO DE TRACKING ---
+                    tracking_active = True
+                    last_known_center = (int(final_ellipse[0][0]), int(final_ellipse[0][1]))
+            
+            except cv2.error:
+                tracking_active = False # Falló el ajuste
+                last_known_center = None
+        else:
+            # --- Pupila NO encontrada ---
+            tracking_active = False
+            last_known_center = None
         
-        if best_pupil_contour is not None:
-            # --- Buscar Píxel más Oscuro (NUEVO) ---
-            # Crear máscara solo para el mejor contorno
-            mask = np.zeros_like(gray_frame_clahe, dtype=np.uint8)
-            cv2.drawContours(mask, [best_pupil_contour], -1, 255, -1)
+        # Dibujar el punto ancla GLOBAL (rojo) en la imagen original
+        cv2.circle(frame_cropped, dark_point, 5, (0, 0, 255), -1)
+        
+        # Dibujar el ROI si está activo
+        if tracking_active:
+            x1, y1, x2, y2 = roi_coords
+            cv2.rectangle(frame_cropped, (x1, y1), (x2, y2), (255, 0, 0), 2) # Rectángulo azul
             
-            # Encontrar el píxel más oscuro (valor mínimo) DENTRO de la máscara
-            minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(gray_frame_clahe, mask=mask)
+        # --- 7. VISUALIZACIÓN FINAL ---
+        
+        # Preparar vista combinada (manejando el tamaño del ROI)
+        display_mask = np.zeros_like(frame_cropped) # Fondo negro 640x480
+        x1, y1, x2, y2 = roi_coords
+        
+        try:
+            # Pegar el ROI procesado (final_bgr) en el fondo negro
+            display_mask[y1:y2, x1:x2] = final_bgr
+        except ValueError as e:
+            # Fallback por si las formas no coinciden
+            h_roi, w_roi, _ = final_bgr.shape
+            display_mask[0:h_roi, 0:w_roi] = final_bgr
             
-            # Dibujar un círculo en el píxel más oscuro
-            cv2.circle(frame_cropped, minLoc, 5, (0, 0, 255), -1) # Círculo rojo
-
-            # --- Optimizar contorno por ángulo (NUEVO) ---
-            optimized_contour = optimize_contours_by_angle([best_pupil_contour])
-            
-            final_ellipse = None
-            if len(optimized_contour) >= 5:
-                final_ellipse = cv2.fitEllipse(optimized_contour)
-            else:
-                # Fallback si la optimización elimina demasiados puntos
-                final_ellipse = cv2.fitEllipse(best_pupil_contour)
-            
-            # Dibujar la elipse final
-            if final_ellipse:
-                cv2.ellipse(frame_cropped, final_ellipse, (0, 255, 255), 2) # Elipse amarilla
-
-        # --- Visualización de la ventana de debug ---
-        thresholded_bgr = cv2.cvtColor(thresholded_image, cv2.COLOR_GRAY2BGR)
-        combined_view = np.hstack((frame_cropped, thresholded_bgr))
+        combined_view = np.hstack((frame_cropped, display_mask))
         
         cv2.putText(combined_view, f"Threshold: {current_threshold}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(combined_view, f"Clip Limit: {current_clip_limit}.0", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(combined_view, f"Kernel Size: {kernel_size}x{kernel_size}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         
         cv2.imshow(window_name, combined_view)
 
@@ -244,9 +318,9 @@ def debug_binarization(video_path):
 if __name__ == "__main__":
     
     # CONFIGURACIÓN: Pon aquí la ruta directa de tu video
-    VIDEO_PATH = r"C:\Users\Victor\Documents\Tesis2\Videos\Experimento_1\Victoria\ROI_videos_640x480\grabacion_experimento_ESP32CAM_5_ROI_640x480.mp4" # <-- CAMBIA ESTA RUTA
+    VIDEO_PATH = r"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_1\Victor\ROI_videos_640x480\grabacion_experimento_ESP32CAM_1_ROI_640x480.mp4" # <-- CAMBIA ESTA RUTA
     
     if not os.path.exists(VIDEO_PATH):
         print(f"Error: El archivo de video no existe en: {VIDEO_PATH}")
     else:
-        debug_binarization(VIDEO_PATH)
+        debug_step_5_with_roi(VIDEO_PATH) # Renombrada la función
