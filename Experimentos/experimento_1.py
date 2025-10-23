@@ -12,43 +12,22 @@ ESP32_STREAM_URL = ESP32_URL + ":81/stream"
 # Cola para almacenar frames de la ESP32-CAM
 frame_queue = queue.Queue(maxsize=60)  # Limitar el tamaño de la cola
 screen_width, screen_height = 1920, 1080
-cam_height, cam_width = 240, 320
 
-# Obtener la ruta base del script actual
-base_path = os.path.dirname(os.path.abspath(__file__))
-
-# Solicitar datos por consola
-print("=== CONFIGURACIÓN DEL EXPERIMENTO ===")
-nombre_persona = input("Ingresa el nombre de la persona: ").strip()
-while not nombre_persona:
-    print("El nombre no puede estar vacío.")
-    nombre_persona = input("Ingresa el nombre de la persona: ").strip()
-
-numero_intento = input("Ingresa el número de intento: ").strip()
-while not numero_intento.isdigit():
-    print("El número de intento debe ser un número válido.")
-    numero_intento = input("Ingresa el número de intento: ").strip()
-
-print("\nConfiguración:")
-print(f"Persona: {nombre_persona}")
-print(f"Intento: {numero_intento}")
-print("-" * 40)
-
-# Rutas de los archivos
-Save_video_path = f"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{nombre_persona}"
-experiment_video_path = "/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_1.mp4"
-
-# Crear el directorio de destino si no existe
-if not os.path.exists(Save_video_path):
-    os.makedirs(Save_video_path)
+# --- MODIFICACIÓN ---
+# Estas variables se establecerán dinámicamente, pero se mantienen como globales
+# para que 'capture_esp32_stream' pueda actualizarlas.
+cam_height, cam_width = 240, 320 
 
 # Variables de control
-recording_active = False  # Comienza en False
-capture_active = True     # La captura siempre está activa
+recording_active = False
+capture_active = True
 
 # Función para capturar frames del ESP32 y ponerlos en la cola
 def capture_esp32_stream():
-    global cam_width, cam_height
+    # --- MODIFICACIÓN ---
+    # Se añade 'global' para asegurar que actualice las variables globales
+    global cam_width, cam_height, capture_active, frame_queue
+    
     print(f"Conectando al stream del ESP32 en: {ESP32_STREAM_URL}")
     
     cap_esp32 = cv2.VideoCapture(ESP32_STREAM_URL)
@@ -102,12 +81,13 @@ def capture_esp32_stream():
     cap_esp32.release()
     print("Stream del ESP32 detenido.")
 
-# Función para grabar frames de la ESP32-CAM de forma independiente
-def record_esp32_frames():
-    global recording_active
+# --- MODIFICACIÓN ---
+# La función ahora acepta el path de salida como argumento
+def record_esp32_frames(output_video_path):
+    global recording_active, capture_active, frame_queue
     
     try:
-        # Esperar a que recording_active se active (después de la cuenta regresiva)
+        # Esperar a que recording_active se active
         print("Thread de grabación esperando señal para iniciar...")
         while not recording_active and capture_active:
             time.sleep(0.1)
@@ -136,24 +116,33 @@ def record_esp32_frames():
             print("Error: No se recibió ningún frame de la ESP32-CAM.")
             return
         
-        print(f"Resolución de la ESP32-CAM: {cam_width}x{cam_height}")
+        # --- MODIFICACIÓN ---
+        # Obtener dimensiones directamente del primer frame (más robusto)
+        rec_height, rec_width, _ = first_frame.shape
+        print(f"Resolución de grabación (detectada): {rec_width}x{rec_height}")
         
         # Inicializar el escritor de video
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        output_video_path = os.path.join(Save_video_path, f"grabacion_experimento_ESP32CAM_{numero_intento}.mp4")
+        # Usar el path de salida del argumento
+        out = cv2.VideoWriter(output_video_path, fourcc, 30.0, (rec_width, rec_height))
         
-        out = cv2.VideoWriter(output_video_path, fourcc, 30.0, (cam_width, cam_height))
+        # --- MODIFICACIÓN ---
+        # Lógica de fallback para el path de salida
+        if not out.isOpened():
+            print("Advertencia: Falló 'mp4v'. Intentando con 'XVID' (.avi)")
+            output_video_path = output_video_path.replace(".mp4", ".avi")
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            out = cv2.VideoWriter(output_video_path, fourcc, 30.0, (rec_width, rec_height))
+            if not out.isOpened():
+                print("Advertencia: Falló 'XVID'. Intentando con 'MJPG' (.avi)")
+                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+                out = cv2.VideoWriter(output_video_path, fourcc, 30.0, (rec_width, rec_height))
         
         if not out.isOpened():
-            fourcc = cv2.VideoWriter_fourcc(*'XVID')
-            output_video_path = os.path.join(Save_video_path, f"grabacion_experimento_ESP32CAM_{numero_intento}.avi")
-            out = cv2.VideoWriter(output_video_path, fourcc, 30.0, (cam_width, cam_height))
-            if not out.isOpened():
-                fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-                output_video_path = os.path.join(Save_video_path, f"grabacion_experimento_ESP32CAM_{numero_intento}.avi")
-                out = cv2.VideoWriter(output_video_path, fourcc, 30.0, (cam_width, cam_height))
-        
-        print(f"Guardando video en: {output_video_path} con resolución {cam_width}x{cam_height}")
+            print(f"Error fatal: No se pudo abrir el VideoWriter con ningún códec para: {output_video_path}")
+            return
+
+        print(f"Guardando video en: {output_video_path} con resolución {rec_width}x{rec_height}")
         
         # Escribir el primer frame
         out.write(first_frame)
@@ -189,18 +178,49 @@ def record_esp32_frames():
     except Exception as e:
         print(f"Error en el hilo de grabación: {e}")
 
-# Función principal que ejecuta el experimento
-def run_experiment():
-    global recording_active, capture_active
+# --- MODIFICACIÓN ---
+# La función ahora acepta el nombre y el número de intento
+def run_experiment(nombre_persona, numero_intento):
+    global recording_active, capture_active, frame_queue
     
+    # --- INICIO DE MODIFICACIÓN: Resetear estado ---
+    print("\n" + "*"*60)
+    print(f"INICIANDO EXPERIMENTO: {nombre_persona} - Intento {numero_intento}")
+    print("*"*60)
+
+    # Resetear variables de control para esta iteración
+    recording_active = False
+    capture_active = True
+    
+    # Limpiar la cola de frames de la ejecución anterior
+    print("Limpiando cola de frames...")
+    while not frame_queue.empty():
+        try:
+            frame_queue.get_nowait()
+        except queue.Empty:
+            break
+    print("Cola de frames limpiada.")
+    # --- FIN DE MODIFICACIÓN ---
+
+    # --- MODIFICACIÓN ---
+    # Se eliminaron las solicitudes de input, ya que vienen por parámetros
+    
+    # Rutas de los archivos
+    Save_video_path = f"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{nombre_persona}"
+    experiment_video_path = "/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_1.mp4"
+
+    # Crear el directorio de destino si no existe
+    if not os.path.exists(Save_video_path):
+        os.makedirs(Save_video_path)
+
     # Captura de video del experimento
     cap_experiment = cv2.VideoCapture(experiment_video_path)
     
     # Verificar que la captura se haya iniciado correctamente
     if not cap_experiment.isOpened():
-        print("Error: No se pudo abrir el video del experimento.")
+        print(f"Error: No se pudo abrir el video del experimento en: {experiment_video_path}")
         capture_active = False
-        exit()
+        return # Usar return en lugar de exit() para no detener el bucle
     
     # Obtener las dimensiones del video de experimento
     exp_width = int(cap_experiment.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -217,8 +237,14 @@ def run_experiment():
     capture_thread = Thread(target=capture_esp32_stream, daemon=True)
     capture_thread.start()
     
-    # Iniciar el hilo de grabación (estará en espera hasta que recording_active sea True)
-    recording_thread = Thread(target=record_esp32_frames, daemon=True)
+    # --- INICIO DE MODIFICACIÓN: Pasar path al thread de grabación ---
+    # Construir el path de salida EXACTAMENTE como lo pediste
+    output_filename = f"{nombre_persona}_intento_{numero_intento}.mp4"
+    output_video_path = os.path.join(Save_video_path, output_filename)
+    
+    # Iniciar el hilo de grabación (estará en espera)
+    recording_thread = Thread(target=record_esp32_frames, args=(output_video_path,), daemon=True)
+    # --- FIN DE MODIFICACIÓN ---
     recording_thread.start()
     
     # Dar tiempo para que se establezca la conexión
@@ -269,12 +295,12 @@ def run_experiment():
     cv2.imshow("Experiment Video", countdown_frame)
     cv2.waitKey(1000)  # Espera 1 segundo
     
-    print("Reproduciendo experimento...")
-    print("Presiona 'q' para detener.")
+    print(f"Reproduciendo experimento (Intento {numero_intento})...")
+    print("Presiona 'q' para detener ESTA iteración.")
     
     # ¡ACTIVAR LA GRABACIÓN AHORA! - Justo antes de mostrar el primer frame del video
     print("\n" + "="*50)
-    print("ACTIVANDO GRABACIÓN DEL ESP32-CAM")
+    print(f"ACTIVANDO GRABACIÓN (Intento {numero_intento})")
     print("="*50 + "\n")
     recording_active = True
     
@@ -301,7 +327,7 @@ def run_experiment():
         # Leer el siguiente frame del video del experimento
         ret_exp, frame_exp = cap_experiment.read()
         if not ret_exp:
-            print("Video del experimento finalizado.")
+            print(f"Video del experimento (Intento {numero_intento}) finalizado.")
             break
         
         # Mostrar el video del experimento a pantalla completa
@@ -324,24 +350,58 @@ def run_experiment():
         # Usar waitKey(1) solo para procesar eventos, no para timing
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
-            print("Experimento detenido manualmente.")
+            print(f"Experimento (Intento {numero_intento}) detenido manualmente.")
             break
     
     # Detener la grabación cuando termina el experimento
     print("\n" + "="*50)
-    print("DETENIENDO GRABACIÓN DEL ESP32-CAM")
+    print(f"DETENIENDO GRABACIÓN (Intento {numero_intento})")
     print("="*50 + "\n")
     recording_active = False
     capture_active = False
     
     print("Esperando a que termine la grabación...")
+    # Esperar a que los hilos terminen
+    capture_thread.join(timeout=2.0)
     recording_thread.join(timeout=5.0)
     
     cap_experiment.release()
     cv2.destroyAllWindows()
     
-    print("Experimento finalizado.")
+    print(f"Intento {numero_intento} finalizado.")
+    print("Esperando 3 segundos antes de la siguiente iteración...")
+    time.sleep(3) # Pausa entre experimentos
 
 if __name__ == "__main__":
-    # Ejecutar el experimento
-    run_experiment()
+    # --- INICIO DE MODIFICACIÓN: Lógica de bucle principal ---
+    
+    # Solicitar datos por consola UNA VEZ
+    print("=== CONFIGURACIÓN DE LA SERIE DE EXPERIMENTOS ===")
+    nombre_persona = input("Ingresa el nombre de la persona: ").strip()
+    while not nombre_persona:
+        print("El nombre no puede estar vacío.")
+        nombre_persona = input("Ingresa el nombre de la persona: ").strip()
+
+    total_iteraciones_str = input("Ingresa el NÚMERO TOTAL de iteraciones (ej: 3): ").strip()
+    while not total_iteraciones_str.isdigit() or int(total_iteraciones_str) <= 0:
+        print("El número de iteraciones debe ser un número positivo.")
+        total_iteraciones_str = input("Ingresa el NÚMERO TOTAL de iteraciones (ej: 3): ").strip()
+    
+    total_iteraciones = int(total_iteraciones_str)
+
+    print("\nConfiguración:")
+    print(f"Persona: {nombre_persona}")
+    print(f"Total de intentos: {total_iteraciones}")
+    print("-" * 40)
+    
+    # Bucle principal para ejecutar el experimento N veces
+    for i in range(1, total_iteraciones + 1):
+        numero_intento_actual = str(i)
+        
+        # Ejecutar el experimento completo
+        run_experiment(nombre_persona, numero_intento_actual)
+    
+    print("\n" + "="*60)
+    print("TODAS LAS ITERACIONES HAN FINALIZADO.")
+    print("="*60)
+    # --- FIN DE MODIFICACIÓN ---
