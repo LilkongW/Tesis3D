@@ -207,7 +207,15 @@ def run_experiment(nombre_persona, numero_intento):
     
     # Rutas de los archivos
     Save_video_path = f"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{nombre_persona}"
+
+    #Ruta experimento 1
     experiment_video_path = "/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_1.mp4"
+    
+    #Ruta experimento 2
+    #experiment_video_path = "/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_2.mp4"
+
+    #Ruta experimento 3
+    #experiment_video_path = "/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_3.mp4"
 
     # Crear el directorio de destino si no existe
     if not os.path.exists(Save_video_path):
