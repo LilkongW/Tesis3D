@@ -7,10 +7,10 @@ def main():
     # --- CONFIGURACIÓN DE RUTAS ---
     
     # Carpeta que contiene los videos a procesar
-    VIDEO_FOLDER_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Victoria/ROI_videos_640x480"  # <-- RUTA DE VIDEOS
+    VIDEO_FOLDER_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Chirinos/ROI_videos_640x480"  # <-- RUTA DE VIDEOS
     
     # Carpeta donde se guardarán los archivos CSV generados
-    CSV_OUTPUT_PATH = r"/home/vit/Documentos/Tesis3D/Data/Victoria_data"  # <-- RUTA DE SALIDA DE CSV
+    CSV_OUTPUT_PATH = r"/home/vit/Documentos/Tesis3D/Data/Chirinos_data"  # <-- RUTA DE SALIDA DE CSV
 
     # ---------------------------------
     

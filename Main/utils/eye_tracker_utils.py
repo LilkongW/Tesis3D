@@ -11,13 +11,13 @@ import csv
 FIXED_THRESHOLD_VALUE = 85   # Umbral fijo
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0       # Límite de clip
-MIN_PUPIL_AREA = 500        # Área mínima
-MAX_PUPIL_AREA = 4500        # Área máxima
+MIN_PUPIL_AREA = 3000        # Área mínima
+MAX_PUPIL_AREA = 15000        # Área máxima
 MORPH_KERNEL_SIZE = 5        # Tamaño kernel morfología (N=2 -> 5x5)
 # ------------------------------------------
 
 # --- PARÁMETRO DE ESTABILIDAD DEL MODELO ---
-MAX_INTERSECTION_DISTANCE = 60 # Ajustado previamente
+MAX_INTERSECTION_DISTANCE = 120 # Ajustado previamente
 # ------------------------------------------
 
 # --- PARÁMETROS DE ROBUSTEZ ---
