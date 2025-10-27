@@ -1,0 +1,14 @@
+video_name,frame_number,timestamp_ms,valid_deteccion,sphere_center_x,sphere_center_y,sphere_center_z,pupil_center_x,pupil_center_y,gaze_x,gaze_y,gaze_z,ellipse_width,ellipse_height,ellipse_angle,contour_area
+ManuelMal_intento_3_ROI_640x480.mp4,1,33.333,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,2,66.667,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,3,100.000,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,4,133.333,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,5,166.667,True,320.000,240.000,0.000,452.000,240.000,0.412500,-0.000000,-0.910958,37.486,58.582,19.163,1611.0
+ManuelMal_intento_3_ROI_640x480.mp4,6,200.000,True,320.000,240.000,0.000,452.000,241.000,0.412500,-0.003125,-0.910952,36.356,58.467,23.882,1543.5
+ManuelMal_intento_3_ROI_640x480.mp4,7,233.333,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,8,266.667,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,9,300.000,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,10,333.333,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,11,366.667,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,12,400.000,False,320.000,240.000,,,,,,,,,,
+ManuelMal_intento_3_ROI_640x480.mp4,13,433.333,False,320.000,240.000,,,,,,,,,,

@@ -6,13 +6,13 @@ import math # Añadido de nuevo para la optimización de ángulos
 
 # --- PARÁMETROS DE PREPROCESAMIENTO ---
 GAUSSIAN_KERNEL_SIZE = (7, 7)
-CLAHE_CLIP_LIMIT = 1.0 # Fijo
-INITIAL_THRESHOLD_VALUE = 85 # Value from your code
+CLAHE_CLIP_LIMIT = 2.0 # Fijo
+INITIAL_THRESHOLD_VALUE = 76 # Value from your code
 INITIAL_KERNEL_N = 2 # N=2 -> (2*2)+1 = 5. Usaremos un kernel de 5x5
 
 # --- PARÁMETROS DE FILTRADO (AHORA VALORES INICIALES PARA TRACKBARS) ---
-INITIAL_MIN_PUPIL_AREA = 1500 # Value from your code (changed from previous)
-INITIAL_MAX_PUPIL_AREA = 15000  # Value from your code (changed from previous)
+INITIAL_MIN_PUPIL_AREA = 900 # Value from your code (changed from previous)
+INITIAL_MAX_PUPIL_AREA = 5000  # Value from your code (changed from previous)
 # Define ranges for trackbars
 MAX_SLIDER_MIN_AREA = 5000
 MAX_SLIDER_MAX_AREA = 30000
@@ -21,7 +21,7 @@ MAX_SLIDER_MAX_AREA = 30000
 MIN_ELLIPTICAL_FIT_RATIO = 0.8 # Value from your code
 MAX_ELLIPTICAL_FIT_RATIO = 1.10 # <<<--- NUEVO LÍMITE SUPERIOR CON TOLERANCIA
 # ------------------------------------
-VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Chirinos/ROI_videos_640x480/Chirinos_intento_1_ROI_640x480.mp4" # <-- CHANGE THIS PATH
+VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/ManuelMal/ROI_videos_640x480/ManuelMal_intento_1_ROI_640x480.mp4" # <-- CHANGE THIS PATH
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 
 def crop_to_aspect_ratio(image, width=640, height=480):
