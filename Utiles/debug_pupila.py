@@ -2,26 +2,37 @@ import cv2
 import numpy as np
 import os
 import time
-import math # Añadido de nuevo para la optimización de ángulos
+import math 
 
 # --- PARÁMETROS DE PREPROCESAMIENTO ---
 GAUSSIAN_KERNEL_SIZE = (7, 7)
-CLAHE_CLIP_LIMIT = 2.0 # Fijo
-INITIAL_THRESHOLD_VALUE = 76 # Value from your code
-INITIAL_KERNEL_N = 2 # N=2 -> (2*2)+1 = 5. Usaremos un kernel de 5x5
+CLAHE_CLIP_LIMIT = 1.0 
+INITIAL_THRESHOLD_VALUE = 110
+INITIAL_KERNEL_N = 2 
 
 # --- PARÁMETROS DE FILTRADO (AHORA VALORES INICIALES PARA TRACKBARS) ---
-INITIAL_MIN_PUPIL_AREA = 900 # Value from your code (changed from previous)
-INITIAL_MAX_PUPIL_AREA = 5000  # Value from your code (changed from previous)
-# Define ranges for trackbars
+INITIAL_MIN_PUPIL_AREA = 1500 
+INITIAL_MAX_PUPIL_AREA = 8000  
 MAX_SLIDER_MIN_AREA = 5000
 MAX_SLIDER_MAX_AREA = 30000
 
-# --- NUEVO PARÁMETRO DE ROBUSTEZ ---
-MIN_ELLIPTICAL_FIT_RATIO = 0.8 # Value from your code
-MAX_ELLIPTICAL_FIT_RATIO = 1.10 # <<<--- NUEVO LÍMITE SUPERIOR CON TOLERANCIA
-# ------------------------------------
-VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/ManuelMal/ROI_videos_640x480/ManuelMal_intento_1_ROI_640x480.mp4" # <-- CHANGE THIS PATH
+# --- PARÁMETRO DE ROBUSTEZ ---
+MIN_ELLIPTICAL_FIT_RATIO = 0.8 
+MAX_ELLIPTICAL_FIT_RATIO = 1.10 
+
+# --- PARÁMETROS DE PONDERACIÓN ---
+W_FIT = 0.7      # 70% de importancia al ajuste elíptico
+W_DARKNESS = 0.3 # 30% de importancia a la oscuridad
+# ----------------------------------------------
+
+# --- <<<--- NUEVO PARÁMETRO DE FILTRO DE BBOX ---
+# Tolerancia para "horizontal". Un círculo perfecto es 1.0.
+# Descartaremos cualquier cosa que sea > 8% más ancha que alta.
+HORIZONTALITY_TOLERANCE = 1.20 
+# -----------------------------------------------
+
+VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Rodelo/ROI_videos_640x480/Rodelo_intento_1_ROI_640x480.mp4" # <-- CHANGE THIS PATH
+
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 
 def crop_to_aspect_ratio(image, width=640, height=480):
@@ -74,6 +85,26 @@ def optimize_contours_by_angle(contours):
         if np.dot(vec_to_centroid, (vec1+vec2)) > 0: filtered_points.append(all_contours[i])
     if not filtered_points or len(filtered_points) < 5: return np.array([], dtype=np.int32).reshape((-1, 1, 2))
     return np.array(filtered_points, dtype=np.int32).reshape((-1, 1, 2))
+
+
+# --- FUNCIÓN DE AYUDA PARA OSCURIDAD (CORREGIDA) ---
+def obtener_oscuridad_media_contorno(image_gray, contour):
+    """Calcula la intensidad media de píxeles dentro de un contorno."""
+    if contour is None or len(contour) == 0:
+        return 255.0  # Devuelve la peor puntuación (más brillante)
+    
+    mask = np.zeros(image_gray.shape, dtype=np.uint8)
+    cv2.drawContours(mask, [contour], -1, (255), cv2.FILLED)
+
+    if np.sum(mask) == 0:
+        return 255.0 
+
+    mean, stddev = cv2.meanStdDev(image_gray, mask=mask)
+
+    mean_darkness = mean[0][0]
+        
+    return mean_darkness
+# ------------------------------------
 
 def on_trackbar(val): pass
 
@@ -130,36 +161,67 @@ def debug_full_frame_processing(video_path):
         # --- 5. Contour Filtering ---
         contours, _ = cv2.findContours(thresholded_image_final.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        # --- Pre-filter by Area ---
         contours_in_area_range = []
         for contour in contours:
             contour_area = cv2.contourArea(contour)
             if current_min_area <= contour_area <= current_max_area:
                 contours_in_area_range.append(contour)
 
+        # --- LÓGICA DE SELECCIÓN MODIFICADA ---
         best_pupil_contour = None
-        best_fit_ratio = 0.0
+        best_final_score = float('inf') 
         best_contour_area = 0.0
+        best_fit_for_display = 0.0 
+        best_darkness_for_display = 255.0
+        
+        discarded_horizontal_contours = [] # Tu lista para descartes
 
         # --- Main Loop: Iterate ONLY over valid area contours ---
         for contour in contours_in_area_range:
-            # --- Elliptical Shape Filter ---
+            
+            # --- <<<--- NUEVO FILTRO GEOMÉTRICO (REEMPLAZA AL ANTERIOR) ---
+            # Comprueba la Bounding Box (caja delimitadora) no rotada.
+            # Esto comprueba la apariencia VISUAL en la pantalla.
+            x_bbox, y_bbox, w_bbox, h_bbox = cv2.boundingRect(contour)
+            
+            # Si es visualmente más ancha que alta (con tolerancia), descártala.
+            if w_bbox > (h_bbox * HORIZONTALITY_TOLERANCE):
+                discarded_horizontal_contours.append(contour)
+                continue
+            # --- ----------------------------------------------------
+
             if len(contour) < 5: continue
             try:
                 fitted_ellipse = cv2.fitEllipse(contour)
                 (width, height) = fitted_ellipse[1]
                 if width <= 0 or height <= 0: continue
+                
+                # --- El filtro de "width > height" de la elipse se ha ELIMINADO ---
+
                 ellipse_area = (np.pi / 4.0) * width * height
                 if ellipse_area <= 0: continue
                 contour_area = cv2.contourArea(contour)
                 fit_ratio = contour_area / ellipse_area
 
-                # --- CONDITION MODIFIED ---
-                # Check if ratio is valid (MIN < ratio <= MAX) AND better than current best
-                if MIN_ELLIPTICAL_FIT_RATIO < fit_ratio <= MAX_ELLIPTICAL_FIT_RATIO and fit_ratio > best_fit_ratio:
-                    best_fit_ratio = fit_ratio
-                    best_pupil_contour = contour
-                    best_contour_area = contour_area
+                # --- CONDICIÓN 1: Comprobar si fit_ratio está en el rango válido ---
+                if MIN_ELLIPTICAL_FIT_RATIO < fit_ratio <= MAX_ELLIPTICAL_FIT_RATIO:
+                    
+                    # --- CONDICIÓN 2: Calcular Oscuridad ---
+                    mean_darkness = obtener_oscuridad_media_contorno(gray_frame_clahe, contour)
+
+                    # --- CONDICIÓN 3: Calcular Puntuación Ponderada ---
+                    fit_score = abs(fit_ratio - 1.0) 
+                    darkness_score = mean_darkness / 255.0
+                    final_score = (W_FIT * fit_score) + (W_DARKNESS * darkness_score)
+
+                    # --- SELECCIÓN: Comprobar si esta puntuación es la nueva mejor ---
+                    if final_score < best_final_score:
+                        best_final_score = final_score
+                        best_pupil_contour = contour
+                        best_contour_area = contour_area
+                        best_fit_for_display = fit_ratio
+                        best_darkness_for_display = mean_darkness
+                        
             except cv2.error: continue
         # --- END OF LOOP ---
 
@@ -167,7 +229,15 @@ def debug_full_frame_processing(video_path):
         final_bgr = cv2.cvtColor(thresholded_image_final, cv2.COLOR_GRAY2BGR)
 
         # --- 6. Optimization & Drawing ---
+        
+        # Dibujar TODOS los contornos en rango de área en AZUL
         cv2.drawContours(final_bgr, contours_in_area_range, -1, (255, 0, 0), 1) # Blue
+        
+        # --- <<<--- DIBUJAR CONTORNOS DESCARTADOS (HORIZONTALES) EN ROJO ---
+        cv2.drawContours(final_bgr, discarded_horizontal_contours, -1, (0, 0, 255), 1) # Red
+        # --------------------------------------------------------------------
+
+        # Dibujar el MEJOR contorno en VERDE
         if best_pupil_contour is not None:
             cv2.drawContours(final_bgr, [best_pupil_contour], -1, (0, 255, 0), 1) # Green
             optimized_contour = optimize_contours_by_angle([best_pupil_contour])
@@ -178,19 +248,24 @@ def debug_full_frame_processing(video_path):
                 else:
                     final_ellipse = cv2.fitEllipse(best_pupil_contour)
                 if final_ellipse:
+                    # Dibujar elipse final en la imagen original
                     cv2.ellipse(frame_cropped, final_ellipse, (0, 255, 255), 2) # Yellow
             except cv2.error: pass
 
         # Draw darkest point
         cv2.circle(frame_cropped, dark_point, 5, (0, 0, 255), -1) # Red
 
-        # --- 7. Final Visualization ---
+        # --- 7. Final Visualization (MODIFICADA) ---
         combined_view = np.hstack((frame_cropped, final_bgr))
         cv2.putText(combined_view, f"Threshold: {current_threshold}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         cv2.putText(combined_view, f"Kernel Size: {kernel_size}x{kernel_size}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
         cv2.putText(combined_view, f"Area Range: {current_min_area}-{current_max_area}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(combined_view, f"Best Valid Fit: {best_fit_ratio:.2f}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(combined_view, f"Best Contour Area: {best_contour_area:.0f}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
+        cv2.putText(combined_view, f"Best Fit: {best_fit_for_display:.2f}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(combined_view, f"Best Darkness: {best_darkness_for_display:.1f}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(combined_view, f"Best Score (Low is B): {best_final_score:.3f}", (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(combined_view, f"Best Contour Area: {best_contour_area:.0f}", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
         cv2.imshow(window_name, combined_view)
 
         # --- Keyboard Control ---

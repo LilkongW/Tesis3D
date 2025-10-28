@@ -6,7 +6,7 @@ import sys
 # --- 📂 CONFIGURATION ---
 # WARNING: Videos in this folder will be PERMANENTLY overwritten.
 # Please make a backup of this folder before running the script.
-VIDEOS_FOLDER = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Victoria/ROI_videos_640x480"
+VIDEOS_FOLDER = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Majo/ROI_videos_640x480"
 
 # Set the intensity of the whitening effect (0.0 to 1.0).
 WHITEN_INTENSITY = 0.2

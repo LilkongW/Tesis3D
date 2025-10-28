@@ -5,12 +5,14 @@ from utils.eye_tracker_utils import process_video_from_path
 
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
+
+    NOMBRE= "Rodelo"
     
     # Carpeta que contiene los videos a procesar
-    VIDEO_FOLDER_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/ManuelMal/ROI_videos_640x480"  # <-- RUTA DE VIDEOS
+    VIDEO_FOLDER_PATH = rf"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{NOMBRE}/ROI_videos_640x480"  # <-- RUTA DE VIDEOS
     
     # Carpeta donde se guardarán los archivos CSV generados
-    CSV_OUTPUT_PATH = r"/home/vit/Documentos/Tesis3D/Data/ManuelMal_data"  # <-- RUTA DE SALIDA DE CSV
+    CSV_OUTPUT_PATH = rf"/home/vit/Documentos/Tesis3D/Data/{NOMBRE}_data"  # <-- RUTA DE SALIDA DE CSV
 
     # ---------------------------------
     
