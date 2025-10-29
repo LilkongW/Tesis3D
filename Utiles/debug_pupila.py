@@ -7,7 +7,7 @@ import math
 # --- PARÁMETROS DE PREPROCESAMIENTO ---
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0 
-INITIAL_THRESHOLD_VALUE = 110
+INITIAL_THRESHOLD_VALUE = 35
 INITIAL_KERNEL_N = 2 
 
 # --- PARÁMETROS DE FILTRADO (AHORA VALORES INICIALES PARA TRACKBARS) ---
@@ -27,11 +27,11 @@ W_DARKNESS = 0.3 # 30% de importancia a la oscuridad
 
 # --- <<<--- NUEVO PARÁMETRO DE FILTRO DE BBOX ---
 # Tolerancia para "horizontal". Un círculo perfecto es 1.0.
-# Descartaremos cualquier cosa que sea > 8% más ancha que alta.
+# Descartaremos cualquier cosa que sea > 20% más ancha que alta.
 HORIZONTALITY_TOLERANCE = 1.20 
 # -----------------------------------------------
 
-VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Rodelo/ROI_videos_640x480/Rodelo_intento_1_ROI_640x480.mp4" # <-- CHANGE THIS PATH
+VIDEO_PATH = r"Videos/Experimento_1/Sthepanie/Sthepanie_intento_1.mp4" # <-- CHANGE THIS PATH
 
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 

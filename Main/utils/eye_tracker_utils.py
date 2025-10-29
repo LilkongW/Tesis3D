@@ -7,35 +7,31 @@ import time
 import csv
 
 # --- PARÁMETROS DE FILTRADO Y PREPROCESAMIENTO ---
-FIXED_THRESHOLD_VALUE = 102   # Umbral fijo
+FIXED_THRESHOLD_VALUE = 32   # Umbral fijo
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0       # Límite de clip
-MIN_PUPIL_AREA = 1900 # Área mínima
-MAX_PUPIL_AREA = 9500        # Área máxima
+MIN_PUPIL_AREA = 1000 # Área mínima
+MAX_PUPIL_AREA = 8000        # Área máxima
 MORPH_KERNEL_SIZE = 5        # Tamaño kernel morfología
 # ------------------------------------------
 
 # --- PARÁMETRO DE ESTABILIDAD DEL MODELO ---
-MAX_INTERSECTION_DISTANCE = 50 
+MAX_INTERSECTION_DISTANCE = 95 
 # ------------------------------------------
 
-# --- PARÁMETROS DE ROBUSTEZ ---
-MIN_ELLIPTICAL_FIT_RATIO = 0.8 
-MAX_ELLIPTICAL_FIT_RATIO = 1.10
-# ------------------------------------------
-
-# --- PARÁMETROS DE PONDERACIÓN ---
-W_FIT = 0.7      # 70% de importancia al ajuste elíptico
-W_DARKNESS = 0.3 # 30% de importancia a la oscuridad
-# ------------------------------------------
+# --- <<<--- NUEVOS PARÁMETROS DE FILTRO DE AJUSTE ---
+# (Ahora se usan como filtro principal)
+MIN_ELLIPTICAL_FIT_RATIO = 0.8  # Debe ser al menos 80% elíptico
+MAX_ELLIPTICAL_FIT_RATIO = 1.20 # No más de 120% (para permitir ruido)
+# ----------------------------------------------------
 
 # --- <<<--- NUEVO PARÁMETRO DE FILTRO DE BBOX ---
-# Descartaremos cualquier cosa que sea > 5% más ancha que alta.
-HORIZONTALITY_TOLERANCE = 1.15
+# Descartaremos cualquier cosa que sea > 15% más ancha que alta.
+HORIZONTALITY_TOLERANCE = 1.30
 # -----------------------------------------------
 
 # --- PARÁMETROS DE ESTABILIDAD TEMPORAL (FILTRO DE PARPADEO) ---
-MAX_PUPIL_JUMP_DISTANCE = 50 # (Píxeles) Distancia máxima
+MAX_PUPIL_JUMP_DISTANCE = 40 # (Píxeles) Distancia máxima
 MAX_LOST_TRACK_FRAMES = 10   # (Frames) N. de frames para resetear
 # -------------------------------------------------------------------------
 
@@ -72,6 +68,8 @@ def apply_fixed_binary_threshold(image, threshold_value):
     _, thresholded_image = cv2.threshold(image, threshold_value, 255, cv2.THRESH_BINARY_INV)
     return thresholded_image
 
+# --- <<<--- FUNCIÓN find_darkest_3x3_center ELIMINADA ---
+
 # --- FUNCIÓN DE OPTIMIZACIÓN DE ÁNGULO (SIN CAMBIOS) ---
 def optimize_contours_by_angle(contours):
     if not isinstance(contours, list) or len(contours) < 1 or len(contours[0]) < 5: return np.array([], dtype=np.int32).reshape((-1, 1, 2))
@@ -94,21 +92,8 @@ def optimize_contours_by_angle(contours):
     if not filtered_points or len(filtered_points) < 5: return np.array([], dtype=np.int32).reshape((-1, 1, 2))
     return np.array(filtered_points, dtype=np.int32).reshape((-1, 1, 2))
 
-# --- FUNCIÓN DE AYUDA PARA OSCURIDAD (CORREGIDA) ---
-def obtener_oscuridad_media_contorno(image_gray, contour):
-    if contour is None or len(contour) == 0:
-        return 255.0  
-    mask = np.zeros(image_gray.shape, dtype=np.uint8)
-    cv2.drawContours(mask, [contour], -1, (255), cv2.FILLED)
-    if np.sum(mask) == 0:
-        return 255.0 
-    mean, stddev = cv2.meanStdDev(image_gray, mask=mask)
-    mean_darkness = mean[0][0]
-    return mean_darkness
-# ---------------------------------------------------------
 
-
-# --- FUNCIÓN process_frames (LÓGICA DE DETECCIÓN FINALIZADA) ---
+# --- FUNCIÓN process_frames (LÓGICA DE DETECCIÓN MODIFICADA) ---
 def process_frames(frame, gray_frame_clahe):
     global ray_lines, max_rays, prev_model_center_avg, max_observed_distance, stable_pupil_centers, model_centers
     global last_known_pupil_center, frames_since_last_good_detection
@@ -127,6 +112,8 @@ def process_frames(frame, gray_frame_clahe):
     thresholded_image_closed = cv2.morphologyEx(thresholded_image_raw, cv2.MORPH_CLOSE, morph_kernel, iterations=1)
     thresholded_image_final = cv2.morphologyEx(thresholded_image_closed, cv2.MORPH_OPEN, morph_kernel, iterations=1)
 
+    # --- <<<--- 1.5. Llamada a find_darkest_3x3_center ELIMINADA ---
+    
     # 2. Encontrar Contornos
     contours, _ = cv2.findContours(thresholded_image_final.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -137,63 +124,64 @@ def process_frames(frame, gray_frame_clahe):
         if MIN_PUPIL_AREA <= contour_area <= MAX_PUPIL_AREA:
             contours_in_area_range.append(contour)
 
-    # --- 4. Encontrar el Mejor Contorno (LÓGICA PONDERADA) ---
+    # --- ############################################################### ---
+    # --- 4. Encontrar el Mejor Contorno (NUEVA LÓGICA: MEJOR FIT ELÍPTICO) ---
+    # --- ############################################################### ---
+    
     best_pupil_contour = None
-    best_final_score = float('inf') 
+    best_fit_score = float('inf') # La puntuación más baja (cercana a 0) es la mejor
     best_contour_area = 0.0
 
     for contour in contours_in_area_range:
         
-        # --- <<<--- FILTRO 1: GEOMÉTRICO (Bounding Box) ---
-        # Comprueba la apariencia VISUAL. Descarta si es más ancho que alto.
+        # --- FILTRO 1: GEOMÉTRICO (Bounding Box) ---
         x_bbox, y_bbox, w_bbox, h_bbox = cv2.boundingRect(contour)
-        if h_bbox == 0: continue # Evitar división por cero
-        # Compara el ancho vs el alto (con tolerancia)
+        if h_bbox == 0: continue 
         if w_bbox > (h_bbox * HORIZONTALITY_TOLERANCE):
             continue
         # --- -----------------------------------------------
 
-        if len(contour) < 5: continue
+        # Se necesita al menos 5 puntos para fitEllipse
+        if len(contour) < 5:
+            continue
+            
         try:
+            # --- FILTRO 2: Lógica de Ajuste Elíptico ---
             fitted_ellipse = cv2.fitEllipse(contour)
             (width, height) = fitted_ellipse[1]
+            
             if width <= 0 or height <= 0: continue
             
-            # (El filtro 'if width > height:' anterior se eliminó)
-
             ellipse_area = (np.pi / 4.0) * width * height
             if ellipse_area <= 0: continue
-
+            
             contour_area = cv2.contourArea(contour)
             fit_ratio = contour_area / ellipse_area
 
-            # --- FILTRO 2: AJUSTE DE ELIPSE ---
+            # --- FILTRO: ¿Es este un candidato "razonable"? ---
             if MIN_ELLIPTICAL_FIT_RATIO < fit_ratio <= MAX_ELLIPTICAL_FIT_RATIO:
                 
-                # --- PUNTUACIÓN DE OSCURIDAD ---
-                mean_darkness = obtener_oscuridad_media_contorno(gray_frame_clahe, contour)
+                # --- SELECCIÓN: ¿Es este el *mejor* candidato hasta ahora? ---
+                current_fit_score = abs(fit_ratio - 1.0) # Puntuación (0 es perfecto)
                 
-                # --- PUNTUACIÓN PONDERADA ---
-                fit_score = abs(fit_ratio - 1.0) 
-                darkness_score = mean_darkness / 255.0
-                final_score = (W_FIT * fit_score) + (W_DARKNESS * darkness_score)
-
-                # --- SELECCIÓN ---
-                if final_score < best_final_score:
-                    best_final_score = final_score
+                if current_fit_score < best_fit_score:
+                    best_fit_score = current_fit_score
                     best_pupil_contour = contour
-                    best_contour_area = contour_area
-                    
-        except cv2.error: continue
+                    best_contour_area = contour_area # Guardar para el CSV
+
+        except cv2.error:
+            # fitEllipse puede fallar en contornos degenerados
+            continue
     # --- FIN DEL BUCLE DE SELECCIÓN ---
 
     # 5. Procesar si se encontró un contorno válido
     final_rotated_rect = None
     center_x, center_y = None, None
-    is_detection_temporally_stable = False # Asumimos Falso
+    is_detection_temporally_stable = False 
 
     if best_pupil_contour is not None: 
-        data_dict["contour_area"] = best_contour_area
+        data_dict["contour_area"] = best_contour_area 
+        
         optimized_contour = optimize_contours_by_angle([best_pupil_contour])
         ellipse = None
         try:
@@ -232,7 +220,6 @@ def process_frames(frame, gray_frame_clahe):
                     frames_since_last_good_detection = 0
     
     else:
-        # No se encontró ningún contorno
         frames_since_last_good_detection += 1
 
     # Calcular centro del modelo (Esfera Cian)
@@ -245,7 +232,7 @@ def process_frames(frame, gray_frame_clahe):
     data_dict["sphere_center_y"] = model_center_average[1]
 
     # --- Dibujar y poblar datos SÓLO si la detección es VÁLIDA EN TODOS LOS FILTROS ---
-    if is_detection_temporally_stable: # Si pasó el filtro temporal
+    if is_detection_temporally_stable: 
         
         # --- FILTRO 4: ESPACIAL (LÍMITE DEL MODELO) ---
         dist_from_sphere_center = math.hypot(center_x - model_center_average[0], 
@@ -285,6 +272,8 @@ def process_frames(frame, gray_frame_clahe):
     cv2.circle(frame, model_center_average, int(max_observed_distance), (255, 50, 50), 2) # Azul oscuro
     cv2.circle(frame, model_center_average, 8, (255, 255, 0), -1) # Cian
 
+    # --- <<<--- DIBUJAR PUNTO MÁS OSCURO ELIMINADO ---
+    
     # Mostrar frame
     cv2.imshow("Frame with Ellipse and Rays", frame)
     return data_dict
@@ -369,7 +358,7 @@ def compute_gaze_vector(x_pupil, y_pupil, x_sphere, y_sphere, max_radius_pixels,
          fallback_center = np.array([0.0, 0.0, 0.0]); fallback_gaze = np.array([0.0, 0.0, -1.0])
          return fallback_center, fallback_gaze
 
-
+# --- FUNCIÓN DE PROCESAMIENTO PRINCIPAL (SIN CAMBIOS) ---
 def process_frame(frame):
     frame = crop_to_aspect_ratio(frame)
     gray_frame_original = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -379,6 +368,7 @@ def process_frame(frame):
     data_dict = process_frames(frame, gray_frame_clahe)
     return data_dict
 
+# --- FUNCIÓN DE PROCESAMIENTO DE VIDEO (SIN CAMBIOS) ---
 def process_video_from_path(video_path, video_name, csv_path):
     # --- MODIFICADO: Resetear todas las variables de estado ---
     global ray_lines, model_centers, stable_pupil_centers, prev_model_center_avg
@@ -429,6 +419,7 @@ def process_video_from_path(video_path, video_name, csv_path):
                     current_area = data["contour_area"]
                     min_area_found = min(min_area_found, current_area)
                     max_area_found = max(max_area_found, current_area)
+                
                 row = [
                     video_name, frame_counter, f"{timestamp_ms:.3f}", data.get("valid_deteccion", False),
                     f"{data.get('sphere_center_x', ''):.3f}" if data.get('sphere_center_x') is not None else '',
@@ -436,7 +427,7 @@ def process_video_from_path(video_path, video_name, csv_path):
                     f"{data.get('sphere_center_z', ''):.3f}" if data.get('sphere_center_z') is not None else '',
                     f"{data.get('pupil_center_x', ''):.3f}" if data.get('pupil_center_x') is not None else '',
                     f"{data.get('pupil_center_y', ''):.3f}" if data.get('pupil_center_y') is not None else '',
-                    f"{data.get('gaze_x', ''):.6f}" if data.get('gaze_x') is not None else '',
+                    f"{data.get('gaze_x', ''):.6f}" if data.get('gaze_x') is not None else '', 
                     f"{data.get('gaze_y', ''):.6f}" if data.get('gaze_y') is not None else '',
                     f"{data.get('gaze_z', ''):.6f}" if data.get('gaze_z') is not None else '',
                     f"{data.get('ellipse_width', ''):.3f}" if data.get('ellipse_width') is not None else '',
@@ -444,6 +435,7 @@ def process_video_from_path(video_path, video_name, csv_path):
                     f"{data.get('ellipse_angle', ''):.3f}" if data.get('ellipse_angle') is not None else '',
                     f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else ''
                 ]
+                
                 writer.writerow(row)
                 processing_duration_ms = (time.time() - start_time) * 1000
                 wait_time = max(1, frame_delay - int(processing_duration_ms))

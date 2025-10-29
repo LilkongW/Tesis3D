@@ -7,7 +7,7 @@ import os
 import glob 
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
-NOMBRE = "Maria_Jose"
+NOMBRE = "Victoria"
 # Directorio de ENTRADA
 INPUT_DIR = f"/home/vit/Documentos/Tesis3D/Data/{NOMBRE}_data"
 
@@ -78,7 +78,7 @@ def calcular_velocidad_y_aceleracion(df):
     df.fillna(0, inplace=True)
     return df
 
-# --- LÓGICA DE DETECCIÓN I-AT (MODIFICADA) ---
+# --- LÓGICA DE DETECCIÓN I-AT (Sin Cambios) ---
 
 # MODIFICADO: Eliminada la función encontrar_inicio_fin_sacadico
 
@@ -206,7 +206,7 @@ def detectar_fijaciones_restantes(df, sacadicos_df, umbrales):
             
     return pd.DataFrame(fijaciones_validas)
 
-# --- Funciones de Graficación (Sin Cambios) ---
+# --- Funciones de Graficación (Existentes sin cambios) ---
 
 def generar_visualizacion_combinada(df_raw, events_report, umbrales, output_file):
     print(f"Generando gráfico combinado en {output_file}...")
@@ -323,7 +323,83 @@ def generar_visualizacion_sacadicos(df_raw, events_report, umbrales, output_file
     print(f"Gráfico de sacádicos guardado en: {output_file}")
     plt.close(fig) # Cerrar la figura
 
-# --- FUNCIÓN PRINCIPAL (Sin Cambios) ---
+# --- NUEVAS FUNCIONES DE HISTOGRAMA ---
+
+def generar_histograma_velocidad(df_raw, umbrales, output_file):
+    """
+    Genera y guarda un histograma de la velocidad angular.
+    Usa una escala logarítmica en el eje Y para ver mejor la distribución.
+    """
+    print(f"Generando histograma de velocidad en {output_file}...")
+    
+    vel_data = df_raw['velocity_angular_filtered']
+    
+    # Define un rango razonable para el histograma para evitar que 
+    # outliers extremos distorsionen la visualización.
+    # Usamos el percentil 99.5, pero aseguramos un mínimo de 500 °/s.
+    max_val = max(500, vel_data.quantile(0.995))
+    
+    fig, ax = plt.subplots(figsize=(12, 7))
+    
+    ax.hist(vel_data, bins=100, alpha=0.75, color='blue', range=(0, max_val))
+    ax.set_title(f"Histograma de Velocidad Angular (Escala Log)\n(Archivo: {os.path.basename(output_file)})")
+    ax.set_xlabel("Velocidad Angular (°/s)")
+    ax.set_ylabel("Frecuencia (Conteo de Muestras) [Escala Log]")
+    
+    # Añadir línea de umbral de fijación
+    ax.axvline(x=umbrales['V_MAXIMA_FIJACION'], color='green', linestyle=':', 
+               label=f"Umbral Fijación ({umbrales['V_MAXIMA_FIJACION']} °/s)")
+    
+    ax.legend()
+    ax.grid(True)
+    # Usar escala logarítmica en el eje Y es crucial, ya que la mayoría
+    # de las muestras serán de baja velocidad (fijaciones).
+    ax.set_yscale('log') 
+    
+    plt.tight_layout()
+    plt.savefig(output_file)
+    print(f"Histograma de velocidad guardado en: {output_file}")
+    plt.close(fig)
+
+def generar_histograma_aceleracion(df_raw, umbrales, output_file):
+    """
+    Genera y guarda un histograma de la aceleración angular.
+    Usa una escala logarítmica en el eje Y.
+    """
+    print(f"Generando histograma de aceleración en {output_file}...")
+    
+    acel_data = df_raw['acceleration_angular_filtered']
+    
+    # Define un rango simétrico razonable
+    max_abs_val = max(1000, acel_data.abs().quantile(0.995))
+    hist_range = (-max_abs_val, max_abs_val)
+    
+    fig, ax = plt.subplots(figsize=(12, 7))
+    
+    ax.hist(acel_data, bins=150, alpha=0.75, color='purple', range=hist_range)
+    ax.set_title(f"Histograma de Aceleración Angular (Escala Log)\n(Archivo: {os.path.basename(output_file)})")
+    ax.set_xlabel("Aceleración Angular (°/s²)")
+    ax.set_ylabel("Frecuencia (Conteo de Muestras) [Escala Log]")
+    
+    # Añadir líneas de umbral de sacádicos
+    umbral_pos = umbrales['A_PICO_MINIMO']
+    umbral_neg = -umbrales['A_PICO_MINIMO']
+    ax.axvline(x=umbral_pos, color='orange', linestyle=':', 
+               label=f"Umbral Acel. Pos. ({umbral_pos} °/s²)")
+    ax.axvline(x=umbral_neg, color='orange', linestyle=':', 
+               label=f"Umbral Acel. Neg. ({umbral_neg} °/s²)")
+    
+    ax.legend()
+    ax.grid(True)
+    # Escala logarítmica también, ya que la mayoría de los datos estarán cerca de 0.
+    ax.set_yscale('log') 
+    
+    plt.tight_layout()
+    plt.savefig(output_file)
+    print(f"Histograma de aceleración guardado en: {output_file}")
+    plt.close(fig)
+
+# --- FUNCIÓN PRINCIPAL (MODIFICADA) ---
 
 def main():
     """
@@ -354,6 +430,10 @@ def main():
         output_plot_comb = os.path.join(OUTPUT_DIR, f"{base_filename}_grafico_combinado.png")
         output_plot_fix = os.path.join(OUTPUT_DIR, f"{base_filename}_grafico_fijaciones.png")
         output_plot_sac = os.path.join(OUTPUT_DIR, f"{base_filename}_grafico_sacadicos.png")
+        
+        # *** NUEVOS NOMBRES DE ARCHIVO PARA HISTOGRAMAS ***
+        output_plot_hist_vel = os.path.join(OUTPUT_DIR, f"{base_filename}_histograma_velocidad.png")
+        output_plot_hist_acel = os.path.join(OUTPUT_DIR, f"{base_filename}_histograma_aceleracion.png")
         
         try:
             df_original = pd.read_csv(input_file_path)
@@ -387,9 +467,15 @@ def main():
 
         # 6. Generar Gráficos
         try:
+            # Gráficos existentes
             generar_visualizacion_combinada(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_comb)
             generar_visualizacion_fijaciones(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_fix)
             generar_visualizacion_sacadicos(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_sac)
+            
+            # *** NUEVAS LLAMADAS A FUNCIONES DE HISTOGRAMA ***
+            generar_histograma_velocidad(df_completo, UMBRALES_3D, output_plot_hist_vel)
+            generar_histograma_aceleracion(df_completo, UMBRALES_3D, output_plot_hist_acel)
+            
         except Exception as e:
             print(f"ERROR: No se pudo guardar gráficos para '{base_filename}'. Error: {e}")
             continue
