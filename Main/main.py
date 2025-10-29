@@ -6,7 +6,7 @@ from utils.eye_tracker_utils import process_video_from_path
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    NOMBRE= "Victor"
+    NOMBRE= "test"
     
     # Carpeta que contiene los videos a procesar
     VIDEO_FOLDER_PATH = rf"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{NOMBRE}"  # <-- RUTA DE VIDEOS

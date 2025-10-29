@@ -7,11 +7,11 @@ import math
 # --- PARÁMETROS DE PREPROCESAMIENTO ---
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0 
-INITIAL_THRESHOLD_VALUE = 35
+INITIAL_THRESHOLD_VALUE = 30
 INITIAL_KERNEL_N = 2 
 
 # --- PARÁMETROS DE FILTRADO (AHORA VALORES INICIALES PARA TRACKBARS) ---
-INITIAL_MIN_PUPIL_AREA = 1500 
+INITIAL_MIN_PUPIL_AREA = 1000 
 INITIAL_MAX_PUPIL_AREA = 8000  
 MAX_SLIDER_MIN_AREA = 5000
 MAX_SLIDER_MAX_AREA = 30000
@@ -24,10 +24,10 @@ MAX_ELLIPTICAL_FIT_RATIO = 1.20 # No más de 120% (para permitir ruido)
 # --- <<<--- NUEVO PARÁMETRO DE FILTRO DE BBOX ---
 # Tolerancia para "horizontal". Un círculo perfecto es 1.0.
 # Descartaremos cualquier cosa que sea > 20% más ancha que alta.
-HORIZONTALITY_TOLERANCE = 1.20 
+HORIZONTALITY_TOLERANCE = 1.30 
 # -----------------------------------------------
 
-VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Victor/Victor3_intento_1.mp4" # <-- CHANGE THIS PATH
+VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/test/test_intento_1.mp4" # <-- CHANGE THIS PATH
 
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 

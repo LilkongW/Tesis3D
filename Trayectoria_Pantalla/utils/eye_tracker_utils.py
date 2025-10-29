@@ -10,8 +10,8 @@ import csv
 FIXED_THRESHOLD_VALUE = 30   # Umbral fijo
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0       # Límite de clip
-MIN_PUPIL_AREA = 1000 # Área mínima
-MAX_PUPIL_AREA = 8000        # Área máxima
+MIN_PUPIL_AREA = 800 # Área mínima
+MAX_PUPIL_AREA = 10000        # Área máxima
 MORPH_KERNEL_SIZE = 5        # Tamaño kernel morfología
 # ------------------------------------------
 
@@ -27,7 +27,7 @@ MAX_ELLIPTICAL_FIT_RATIO = 1.20 # No más de 120% (para permitir ruido)
 
 # --- <<<--- NUEVO PARÁMETRO DE FILTRO DE BBOX ---
 # Descartaremos cualquier cosa que sea > 30% más ancha que alta.
-HORIZONTALITY_TOLERANCE = 1.30
+HORIZONTALITY_TOLERANCE = 1.40
 # -----------------------------------------------
 
 # --- PARÁMETROS DE ESTABILIDAD TEMPORAL (FILTRO DE PARPADEO) ---
