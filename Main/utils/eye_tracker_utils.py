@@ -11,23 +11,21 @@ FIXED_THRESHOLD_VALUE = 30   # Umbral fijo
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0       # Límite de clip
 MIN_PUPIL_AREA = 1000 # Área mínima
-MAX_PUPIL_AREA = 8000        # Área máxima
+MAX_PUPIL_AREA = 8500        # Área máxima
 MORPH_KERNEL_SIZE = 5        # Tamaño kernel morfología
 # ------------------------------------------
 
 # --- PARÁMETRO DE ESTABILIDAD DEL MODELO ---
-MAX_INTERSECTION_DISTANCE = 95 
+MAX_INTERSECTION_DISTANCE = 35 
 # ------------------------------------------
 
-# --- <<<--- NUEVOS PARÁMETROS DE FILTRO DE AJUSTE ---
-# (Ahora se usan como filtro principal)
-MIN_ELLIPTICAL_FIT_RATIO = 0.8  # Debe ser al menos 80% elíptico
-MAX_ELLIPTICAL_FIT_RATIO = 1.20 # No más de 120% (para permitir ruido)
+# --- FILTRO DE AJUSTE DE PUPILA ---
+MIN_ELLIPTICAL_FIT_RATIO = 0.85 
+MAX_ELLIPTICAL_FIT_RATIO = 1.20
 # ----------------------------------------------------
 
-# --- <<<--- NUEVO PARÁMETRO DE FILTRO DE BBOX ---
-# Descartaremos cualquier cosa que sea > 30% más ancha que alta.
-HORIZONTALITY_TOLERANCE = 1.30
+# --- FILTRO DE BBOX DE PUPILA ---
+HORIZONTALITY_TOLERANCE = 1.35
 # -----------------------------------------------
 
 # --- PARÁMETROS DE ESTABILIDAD TEMPORAL (FILTRO DE PARPADEO) ---
@@ -35,18 +33,36 @@ MAX_PUPIL_JUMP_DISTANCE = 40 # (Píxeles) Distancia máxima
 MAX_LOST_TRACK_FRAMES = 10   # (Frames) N. de frames para resetear
 # -------------------------------------------------------------------------
 
+# --- <<<--- NUEVA CONSTANTE DEL MUNDO REAL ---
+IRIS_DIAMETER_MM = 11.7 # Diámetro promedio del iris humano en mm
+# --- <<<--- ---
+
+# --- <<<--- PARÁMETROS DEL IRIS (DE DEBUG_IRIS.PY) ---
+IRIS_MAX_SEARCH_SCALE_FACTOR = 4.0 
+IRIS_RADIAL_RAYS = 380
+IRIS_GRADIENT_THRESHOLD = 0
+PUPIL_RADIUS_BUFFER_RATIO = 1.4
+IRIS_SPECULAR_LOOKAHEAD_PIXELS = 25
+SPECULAR_GRADIENT_RATIO = -0.6 
+ROBUST_FILTER_THRESHOLD = 1.2
+IRIS_SMOOTHING_ALPHA = 0.7
+# --- <<<--- ---
+
+
 # --- VARIABLES DE ESTADO GLOBALES ---
 ray_lines = []
 model_centers = []
 stable_pupil_centers = []
 max_rays = 120
-prev_model_center_avg = (320, 240)
+prev = (280, 150)
 max_observed_distance = 240 
 
-# --- NUEVAS VARIABLES GLOBALES PARA ESTABILIDAD ---
+# --- VARIABLES GLOBALES DE ESTABILIDAD ---
 last_known_pupil_center = None
 frames_since_last_good_detection = 0
-# ----------------------------------------------------
+# --- <<<--- NUEVA VARIABLE DE ESTADO GLOBAL DEL IRIS ---
+smoothed_iris_ellipse = ((0,0),(0,0),0) # Para el suavizado EMA
+# --- <<<--- ---
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 
@@ -67,8 +83,6 @@ def crop_to_aspect_ratio(image, width=640, height=480):
 def apply_fixed_binary_threshold(image, threshold_value):
     _, thresholded_image = cv2.threshold(image, threshold_value, 255, cv2.THRESH_BINARY_INV)
     return thresholded_image
-
-# --- <<<--- FUNCIÓN find_darkest_3x3_center ELIMINADA ---
 
 # --- FUNCIÓN DE OPTIMIZACIÓN DE ÁNGULO (SIN CAMBIOS) ---
 def optimize_contours_by_angle(contours):
@@ -97,14 +111,20 @@ def optimize_contours_by_angle(contours):
 def process_frames(frame, gray_frame_clahe):
     global ray_lines, max_rays, prev_model_center_avg, max_observed_distance, stable_pupil_centers, model_centers
     global last_known_pupil_center, frames_since_last_good_detection
+    global smoothed_iris_ellipse # <-- ¡NUEVA VARIABLE GLOBAL!
 
     data_dict = {
         "valid_deteccion": False, "sphere_center_x": None, "sphere_center_y": None, "sphere_center_z": None,
         "pupil_center_x": None, "pupil_center_y": None,
         "gaze_x": None, "gaze_y": None, "gaze_z": None,
         "ellipse_width": None, "ellipse_height": None, "ellipse_angle": None,
-        "contour_area": None
+        "contour_area": None,
+        "iris_horiz_diameter_px": None, # <-- ¡NUEVO!
+        "px_per_mm": None,             # <-- ¡NUEVO!
+        "pupil_horiz_diameter_mm": None  # <-- ¡NUEVO!
     }
+    
+    h_frame, w_frame = frame.shape[:2] # Para los límites de los rayos
 
     # 1. Binarización y Morfología
     morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MORPH_KERNEL_SIZE, MORPH_KERNEL_SIZE))
@@ -112,8 +132,6 @@ def process_frames(frame, gray_frame_clahe):
     thresholded_image_closed = cv2.morphologyEx(thresholded_image_raw, cv2.MORPH_CLOSE, morph_kernel, iterations=1)
     thresholded_image_final = cv2.morphologyEx(thresholded_image_closed, cv2.MORPH_OPEN, morph_kernel, iterations=1)
 
-    # --- <<<--- 1.5. Llamada a find_darkest_3x3_center ELIMINADA ---
-    
     # 2. Encontrar Contornos
     contours, _ = cv2.findContours(thresholded_image_final.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -124,58 +142,39 @@ def process_frames(frame, gray_frame_clahe):
         if MIN_PUPIL_AREA <= contour_area <= MAX_PUPIL_AREA:
             contours_in_area_range.append(contour)
 
-    # --- ############################################################### ---
-    # --- 4. Encontrar el Mejor Contorno (NUEVA LÓGICA: MEJOR FIT ELÍPTICO) ---
-    # --- ############################################################### ---
-    
+    # 4. Encontrar el Mejor Contorno (Mejor Fit Elíptico)
     best_pupil_contour = None
-    best_fit_score = float('inf') # La puntuación más baja (cercana a 0) es la mejor
+    best_fit_score = float('inf') 
     best_contour_area = 0.0
 
     for contour in contours_in_area_range:
-        
-        # --- FILTRO 1: GEOMÉTRICO (Bounding Box) ---
         x_bbox, y_bbox, w_bbox, h_bbox = cv2.boundingRect(contour)
         if h_bbox == 0: continue 
         if w_bbox > (h_bbox * HORIZONTALITY_TOLERANCE):
             continue
-        # --- -----------------------------------------------
-
-        # Se necesita al menos 5 puntos para fitEllipse
         if len(contour) < 5:
             continue
             
         try:
-            # --- FILTRO 2: Lógica de Ajuste Elíptico ---
             fitted_ellipse = cv2.fitEllipse(contour)
             (width, height) = fitted_ellipse[1]
-            
             if width <= 0 or height <= 0: continue
-            
             ellipse_area = (np.pi / 4.0) * width * height
             if ellipse_area <= 0: continue
-            
             contour_area = cv2.contourArea(contour)
             fit_ratio = contour_area / ellipse_area
 
-            # --- FILTRO: ¿Es este un candidato "razonable"? ---
             if MIN_ELLIPTICAL_FIT_RATIO < fit_ratio <= MAX_ELLIPTICAL_FIT_RATIO:
-                
-                # --- SELECCIÓN: ¿Es este el *mejor* candidato hasta ahora? ---
-                current_fit_score = abs(fit_ratio - 1.0) # Puntuación (0 es perfecto)
-                
+                current_fit_score = abs(fit_ratio - 1.0) 
                 if current_fit_score < best_fit_score:
                     best_fit_score = current_fit_score
                     best_pupil_contour = contour
-                    best_contour_area = contour_area # Guardar para el CSV
-
+                    best_contour_area = contour_area 
         except cv2.error:
-            # fitEllipse puede fallar en contornos degenerados
             continue
-    # --- FIN DEL BUCLE DE SELECCIÓN ---
-
+    
     # 5. Procesar si se encontró un contorno válido
-    final_rotated_rect = None
+    final_rotated_rect = None # Esta es nuestra elipse de pupila
     center_x, center_y = None, None
     is_detection_temporally_stable = False 
 
@@ -194,6 +193,136 @@ def process_frames(frame, gray_frame_clahe):
             center_x_raw, center_y_raw = map(int, final_rotated_rect[0])
             stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=3)
             center_x, center_y = stable_pupil_center if stable_pupil_center else (center_x_raw, center_y_raw)
+            
+            # --- <<<--- INICIO: LÓGICA DE DETECCIÓN DE IRIS (DE DEBUG_IRIS.PY) ---
+            iris_edge_points = []
+            
+            (cx_f, cy_f), (pupil_w_axis, pupil_h_axis), angle = final_rotated_rect
+            cx, cy = int(cx_f), int(cy_f)
+            pupil_diameter = max(pupil_w_axis, pupil_h_axis) # Usamos el diámetro MÁXIMO de la pupila
+            pupil_radius = pupil_diameter / 2.0
+            
+            min_search_radius = int(pupil_radius * PUPIL_RADIUS_BUFFER_RATIO)
+            max_search_radius = int(pupil_radius * IRIS_MAX_SEARCH_SCALE_FACTOR)
+            
+            # (No dibujamos los círculos de búsqueda verde/naranja en el script final)
+            
+            # --- Lanzar Rayos ---
+            for i in range(IRIS_RADIAL_RAYS):
+                current_angle = (i / IRIS_RADIAL_RAYS) * 2 * np.pi
+                cos_a = np.cos(current_angle)
+                sin_a = np.sin(current_angle)
+                
+                candidate_gradients = []
+                
+                x_prev = int(cx + min_search_radius * cos_a)
+                y_prev = int(cy + min_search_radius * sin_a)
+                
+                if not (0 <= x_prev < w_frame and 0 <= y_prev < h_frame): continue
+                prev_intensity = int(gray_frame_clahe[y_prev, x_prev])
+
+                # --- Caminar a lo largo del rayo ---
+                for r in range(min_search_radius + 1, max_search_radius):
+                    x_curr = int(cx + r * cos_a)
+                    y_curr = int(cy + r * sin_a)
+                    
+                    if not (0 <= x_curr < w_frame and 0 <= y_curr < h_frame): break 
+                    
+                    curr_intensity = int(gray_frame_clahe[y_curr, x_curr])
+                    gradient = curr_intensity - prev_intensity
+                    
+                    if gradient > IRIS_GRADIENT_THRESHOLD:
+                        candidate_gradients.append( (gradient, x_curr, y_curr, r) )
+                        
+                    prev_intensity = curr_intensity
+                
+                # --- Validar candidatos ---
+                if not candidate_gradients: continue
+                
+                validated_candidates = []
+                for candidate in candidate_gradients:
+                    grad_val, x_c, y_c, r_c = candidate
+                    is_reflection = False
+                    try:
+                        intensity_at_peak = int(gray_frame_clahe[y_c, x_c])
+                    except IndexError: continue 
+                    
+                    for r_ahead in range(1, IRIS_SPECULAR_LOOKAHEAD_PIXELS + 1):
+                        x_ahead = int(cx + (r_c + r_ahead) * cos_a)
+                        y_ahead = int(cy + (r_c + r_ahead) * sin_a)
+                        
+                        if not (0 <= x_ahead < w_frame and 0 <= y_ahead < h_frame): break
+                        
+                        intensity_after = int(gray_frame_clahe[y_ahead, x_ahead])
+                        negative_gradient = intensity_after - intensity_at_peak
+                        
+                        if negative_gradient < (IRIS_GRADIENT_THRESHOLD * SPECULAR_GRADIENT_RATIO):
+                            is_reflection = True
+                            break
+                    
+                    if not is_reflection:
+                        validated_candidates.append( ((x_c, y_c), r_c) )
+                
+                # --- Seleccionar el punto VÁLIDO con el MENOR RADIO ---
+                if validated_candidates:
+                    validated_candidates.sort(key=lambda x: x[1], reverse=False)
+                    best_point = validated_candidates[0][0] 
+                    iris_edge_points.append(best_point)
+
+            # --- FILTRAR PUNTOS Y AJUSTAR ELIPSE ---
+            if len(iris_edge_points) >= 10:
+                points_np = np.array(iris_edge_points)
+                center_np = np.array([cx, cy])
+                radii = np.linalg.norm(points_np - center_np, axis=1)
+                
+                median_radius = np.median(radii)
+                mad = np.median(np.abs(radii - median_radius)) * 1.4826 
+                
+                if mad == 0: mad = 1.0 
+                
+                z_score_robusta = np.abs(radii - median_radius) / mad 
+                inlier_indices = np.where(z_score_robusta < ROBUST_FILTER_THRESHOLD)
+                cleaned_points_np = points_np[inlier_indices]
+
+                # --- ¡AJUSTE DE ELIPSE AL IRIS! ---
+                if len(cleaned_points_np) >= 5: 
+                    try:
+                        fitted_iris_ellipse = cv2.fitEllipse(cleaned_points_np)
+
+                        # --- ¡NUEVA LÓGICA DE CÁLCULO! ---
+                        iris_horiz_diameter_px = fitted_iris_ellipse[1][0]
+                        pupil_horiz_diameter_px = final_rotated_rect[1][0]
+                        
+                        # Evitar división por cero
+                        if iris_horiz_diameter_px > 0:
+                            px_per_mm = iris_horiz_diameter_px / IRIS_DIAMETER_MM
+                            pupil_horiz_diameter_mm = pupil_horiz_diameter_px / px_per_mm
+                            
+                            # Guardar en el diccionario de datos
+                            data_dict["iris_horiz_diameter_px"] = iris_horiz_diameter_px
+                            data_dict["px_per_mm"] = px_per_mm
+                            data_dict["pupil_horiz_diameter_mm"] = pupil_horiz_diameter_mm
+                        # --- ---
+
+                        # --- ¡LÓGICA DE SUAVIZADO DE ELIPSE! ---
+                        if smoothed_iris_ellipse[1][0] == 0.0: # Primera detección
+                            smoothed_iris_ellipse = fitted_iris_ellipse
+                        else:
+                            # Suavizar el centro (x,y)
+                            scx = (fitted_iris_ellipse[0][0] * IRIS_SMOOTHING_ALPHA) + (smoothed_iris_ellipse[0][0] * (1.0 - IRIS_SMOOTHING_ALPHA))
+                            scy = (fitted_iris_ellipse[0][1] * IRIS_SMOOTHING_ALPHA) + (smoothed_iris_ellipse[0][1] * (1.0 - IRIS_SMOOTHING_ALPHA))
+                            # Suavizar los ejes (ancho, alto)
+                            sax = (fitted_iris_ellipse[1][0] * IRIS_SMOOTHING_ALPHA) + (smoothed_iris_ellipse[1][0] * (1.0 - IRIS_SMOOTHING_ALPHA))
+                            say = (fitted_iris_ellipse[1][1] * IRIS_SMOOTHING_ALPHA) + (smoothed_iris_ellipse[1][1] * (1.0 - IRIS_SMOOTHING_ALPHA))
+                            # Suavizar el ángulo
+                            sang = (fitted_iris_ellipse[2] * IRIS_SMOOTHING_ALPHA) + (smoothed_iris_ellipse[2] * (1.0 - IRIS_SMOOTHING_ALPHA))
+                            
+                            smoothed_iris_ellipse = ((scx, scy), (sax, say), sang)
+
+                    except cv2.error:
+                        pass # Falló el ajuste, no hacer nada
+
+            # --- <<<--- FIN: LÓGICA DE DETECCIÓN DE IRIS ---
             
             # --- FILTRO 3: TEMPORAL (PARPADEO/SALTO) ---
             new_pupil_center = (center_x, center_y)
@@ -244,8 +373,10 @@ def process_frames(frame, gray_frame_clahe):
             ray_lines.append(final_rotated_rect) 
             if len(ray_lines) > max_rays: ray_lines.pop(0)
 
-            # Dibujar
+            # Dibujar Pupila
             cv2.ellipse(frame, final_rotated_rect, (0, 255, 255), 2) # Amarillo
+            
+            # Dibujar Gaze
             cv2.line(frame, model_center_average, (center_x, center_y), (255, 150, 50), 2) # Azul claro
             dx = center_x - model_center_average[0]; dy = center_y - model_center_average[1]
             ex = int(model_center_average[0] + 2 * dx); ey = int(model_center_average[1] + 2 * dy)
@@ -262,17 +393,24 @@ def process_frames(frame, gray_frame_clahe):
                 data_dict["pupil_center_y"] = center_y
                 data_dict["gaze_x"] = direction_3d[0]; data_dict["gaze_y"] = direction_3d[1]; data_dict["gaze_z"] = direction_3d[2]
                 data_dict["ellipse_width"] = final_rotated_rect[1][0]; data_dict["ellipse_height"] = final_rotated_rect[1][1]; data_dict["ellipse_angle"] = final_rotated_rect[2]
-
+                
+                # (Los datos del iris ya se poblaron arriba si se detectó)
+                
                 origin_text = f"Origin: ({center_3d[0]:.2f}, {center_3d[1]:.2f}, {center_3d[2]:.2f})"
                 dir_text = f"Direction: ({direction_3d[0]:.2f}, {direction_3d[1]:.2f}, {direction_3d[2]:.2f})"
                 cv2.putText(frame, origin_text, (10, frame.shape[0] - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
                 cv2.putText(frame, dir_text, (10, frame.shape[0] - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         
-    # Dibujar modelo del ojo (siempre)
+    # --- DIBUJAR SIEMPRE (FUERA DE LOS FILTROS) ---
+    
+    # Dibujar modelo del ojo
     cv2.circle(frame, model_center_average, int(max_observed_distance), (255, 50, 50), 2) # Azul oscuro
     cv2.circle(frame, model_center_average, 8, (255, 255, 0), -1) # Cian
 
-    # --- <<<--- DIBUJAR PUNTO MÁS OSCURO ELIMINADO ---
+    # --- <<<--- DIBUJAR IRIS SUAVIZADO (SIEMPRE) ---
+    if smoothed_iris_ellipse[1][0] > 0 and smoothed_iris_ellipse[1][1] > 0:
+        cv2.ellipse(frame, smoothed_iris_ellipse, (255, 0, 255), 2) # Magenta
+    # --- <<<--- ---
     
     # Mostrar frame
     cv2.imshow("Frame with Ellipse and Rays", frame)
@@ -368,18 +506,18 @@ def process_frame(frame):
     data_dict = process_frames(frame, gray_frame_clahe)
     return data_dict
 
-# --- FUNCIÓN DE PROCESAMIENTO DE VIDEO (SIN CAMBIOS) ---
-def process_video_from_path(video_path, video_name, csv_path):
+# --- FUNCIÓN DE PROCESAMIENTO DE VIDEO (MODIFICADA PARA CSV Y RESETEO) ---
+def process_video_from_path(video_path, video_name, csv_path,prev):
     # --- MODIFICADO: Resetear todas las variables de estado ---
     global ray_lines, model_centers, stable_pupil_centers, prev_model_center_avg
     global last_known_pupil_center, frames_since_last_good_detection 
+    global smoothed_iris_ellipse # <-- ¡NUEVO RESETEO!
     
     ray_lines, model_centers, stable_pupil_centers = [], [], []
-    prev_model_center_avg = (320, 240)
-    
-    # --- Resetear aquí ---
+    prev_model_center_avg = prev
     last_known_pupil_center = None
     frames_since_last_good_detection = 0
+    smoothed_iris_ellipse = ((0,0),(0,0),0) # <-- ¡NUEVO RESETEO!
     # ---------------------
 
     if hasattr(compute_average_intersection, 'stored_intersections'):
@@ -395,14 +533,17 @@ def process_video_from_path(video_path, video_name, csv_path):
 
     print(f"Processing video: {video_path}\nSaving CSV data to: {csv_path}\nPress 'q' to quit, 'space' to pause")
 
+    # --- <<<--- ENCABEZADO CSV ACTUALIZADO ---
     csv_header = [
         "video_name", "frame_number", "timestamp_ms", "valid_deteccion",
         "sphere_center_x", "sphere_center_y", "sphere_center_z",
         "pupil_center_x", "pupil_center_y",
         "gaze_x", "gaze_y", "gaze_z",
         "ellipse_width", "ellipse_height", "ellipse_angle",
-        "contour_area"
+        "contour_area",
+        "iris_horiz_diameter_px", "px_per_mm", "pupil_horiz_diameter_mm" # <-- ¡NUEVAS COLUMNAS!
     ]
+    # --- <<<--- ---
 
     try:
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
@@ -420,6 +561,7 @@ def process_video_from_path(video_path, video_name, csv_path):
                     min_area_found = min(min_area_found, current_area)
                     max_area_found = max(max_area_found, current_area)
                 
+                # --- <<<--- FILA DE CSV ACTUALIZADA ---
                 row = [
                     video_name, frame_counter, f"{timestamp_ms:.3f}", data.get("valid_deteccion", False),
                     f"{data.get('sphere_center_x', ''):.3f}" if data.get('sphere_center_x') is not None else '',
@@ -433,8 +575,13 @@ def process_video_from_path(video_path, video_name, csv_path):
                     f"{data.get('ellipse_width', ''):.3f}" if data.get('ellipse_width') is not None else '',
                     f"{data.get('ellipse_height', ''):.3f}" if data.get('ellipse_height') is not None else '',
                     f"{data.get('ellipse_angle', ''):.3f}" if data.get('ellipse_angle') is not None else '',
-                    f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else ''
+                    f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else '',
+                    # --- ¡NUEVOS DATOS! ---
+                    f"{data.get('iris_horiz_diameter_px', ''):.3f}" if data.get('iris_horiz_diameter_px') is not None else '',
+                    f"{data.get('px_per_mm', ''):.6f}" if data.get('px_per_mm') is not None else '',
+                    f"{data.get('pupil_horiz_diameter_mm', ''):.3f}" if data.get('pupil_horiz_diameter_mm') is not None else ''
                 ]
+                # --- <<<--- ---
                 
                 writer.writerow(row)
                 processing_duration_ms = (time.time() - start_time) * 1000

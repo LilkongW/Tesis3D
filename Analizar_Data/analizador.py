@@ -7,12 +7,15 @@ import os
 import glob 
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
-NOMBRE = "Victoria"
+NOMBRE = "Victor"
 # Directorio de ENTRADA
-INPUT_DIR = f"/home/vit/Documentos/Tesis3D/Data/{NOMBRE}_data"
+
+EXP_NUM = 1
+
+INPUT_DIR = f"/home/vit/Documentos/Tesis3D/Data/Experimento_{EXP_NUM}/{NOMBRE}_data"
 
 # Directorio de SALIDA
-OUTPUT_DIR = f"/home/vit/Documentos/Tesis3D/Analizar_Data/Resultados/{NOMBRE}_data"
+OUTPUT_DIR = f"/home/vit/Documentos/Tesis3D/Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data"
 
 # Nombres de archivos de reporte y gráficos
 OUTPUT_REPORT_AGGREGATE = os.path.join(OUTPUT_DIR, "reporte_agregado_general.csv")

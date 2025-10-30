@@ -17,7 +17,7 @@ MAX_SLIDER_MIN_AREA = 5000
 MAX_SLIDER_MAX_AREA = 30000
 
 # --- PARÁMETRO DE ROBUSTEZ (AHORA SE USA COMO FILTRO) ---
-MIN_ELLIPTICAL_FIT_RATIO = 0.8  # Debe ser al menos 80% elíptico
+MIN_ELLIPTICAL_FIT_RATIO = 0.85  # Debe ser al menos 80% elíptico
 MAX_ELLIPTICAL_FIT_RATIO = 1.20 # No más de 120% (para permitir ruido)
 # ----------------------------------------------
 
@@ -27,7 +27,7 @@ MAX_ELLIPTICAL_FIT_RATIO = 1.20 # No más de 120% (para permitir ruido)
 HORIZONTALITY_TOLERANCE = 1.30 
 # -----------------------------------------------
 
-VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/test/test_intento_1.mp4" # <-- CHANGE THIS PATH
+VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Venegas/Venegas_intento_1.mp4" # <-- CHANGE THIS PATH
 
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 

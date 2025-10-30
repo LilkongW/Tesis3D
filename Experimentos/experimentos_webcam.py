@@ -351,7 +351,7 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     print("="*70)
     
     # Configurar rutas
-    save_path = f"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{nombre_persona}"
+    save_path = f"/home/vit/Documentos/Tesis3D/Videos/Experimento_{EXP_NUM}/{nombre_persona}"
     experiment_video_path = f"/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_{EXP_NUM}.mp4"
     
     if not os.path.exists(save_path):
