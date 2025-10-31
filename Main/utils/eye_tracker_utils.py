@@ -295,7 +295,7 @@ def process_frames(frame, gray_frame_clahe):
                         
                         # Evitar división por cero
                         if iris_horiz_diameter_px > 0:
-                            px_per_mm = iris_horiz_diameter_px / IRIS_DIAMETER_MM
+                            px_per_mm = iris_horiz_diameter_px / IRIS_DIAMETER_MM #regla de conversion
                             pupil_horiz_diameter_mm = pupil_horiz_diameter_px / px_per_mm
                             
                             # Guardar en el diccionario de datos

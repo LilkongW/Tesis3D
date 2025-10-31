@@ -1,0 +1,4 @@
+event_id,event_type,event_class,start_time_ms,end_time_ms,duration_ms,amplitude_deg,velocidad_promedio_deg_s
+b_2,parpadeo,parpadeo,8700.0,8833.333,133.33300000000054,,
+b_4,parpadeo,parpadeo,10233.333,10400.0,166.66699999999946,,
+b_6,parpadeo,parpadeo,12366.667,12433.333,66.66600000000108,,

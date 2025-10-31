@@ -210,7 +210,7 @@ if __name__ == "__main__":
     
     # Comprobar si el archivo existe
     if not os.path.exists(INPUT_CSV_PATH):
-        print(f"Error: No se encontró el archivo CSV en la ruta especificada:")
+        print("Error: No se encontró el archivo CSV en la ruta especificada:")
         print(f"{INPUT_CSV_PATH}")
     else:
         # Llamar a la función principal
