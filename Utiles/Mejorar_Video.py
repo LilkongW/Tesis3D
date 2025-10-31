@@ -396,10 +396,10 @@ def example_usage():
     
     # Procesar video
     upscaler.process_video(
-        input_path='c:\\Users\\Victor\\Downloads\\video_20251009_130204.mp4',
-        output_path='c:\\Users\\Victor\\Downloads\\video_20251009_130204_enhanced_1x.mp4',
-        start_frame=0,  
-        end_frame=None, 
+        input_path=r'C:\\Users\\Victor\\Documents\\Tesis3D\\Videos\\Experimento_1\\Victor\\ROI_videos_640x480\\Victor_intento_1_ROI_640x480.mp4',
+        output_path=r'C:\\Users\\Victor\\Documents\\Tesis3D\\Videos\\Experimento_1\\Victor\\ROI_videos_640x480\\Victor_intento_1_ROI_640x480_dif.mp4',
+        start_frame=0,
+        end_frame=None,
         # === USO PROGRAMÁTICO PARA MANTENER RESOLUCIÓN ORIGINAL ===
         target_size='original', # <--- ¡Mantiene la resolución original (W x H) del video!
         # ========================================================
