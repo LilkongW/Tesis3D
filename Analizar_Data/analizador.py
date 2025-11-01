@@ -7,7 +7,7 @@ import os
 import glob 
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
-NOMBRE = "Sthepanie"
+NOMBRE = "Victoria"
 # Directorio de ENTRADA
 EXP_NUM = 1
 INPUT_DIR = fr"C:\Users\Victor\Documents\Tesis3D\Data\Experimento_{EXP_NUM}\{NOMBRE}_data"
@@ -320,7 +320,7 @@ def generar_visualizacion_combinada(df_raw, events_report, umbrales, output_file
     if stimulus_events:
         y_lim_ax1 = ax1.get_ylim()
         for i, event in enumerate(stimulus_events):
-            color = 'cyan' if i % 2 == 0 else 'magenta'
+            color = 'red' if i % 2 == 0 else 'magenta'
             start_s = event['start_time_ms'] / 1000.0
             
             ax1.axvline(x=start_s, color=color, linestyle='--', alpha=0.7, zorder=1)
@@ -376,7 +376,7 @@ def generar_visualizacion_fijaciones(df_raw, events_report, umbrales, output_fil
     if stimulus_events:
         y_lim_ax1 = ax1.get_ylim()
         for i, event in enumerate(stimulus_events):
-            color = 'cyan' if i % 2 == 0 else 'magenta'
+            color = 'red' if i % 2 == 0 else 'magenta'
             start_s = event['start_time_ms'] / 1000.0
             
             ax1.axvline(x=start_s, color=color, linestyle='--', alpha=0.7, zorder=1)
@@ -429,7 +429,7 @@ def generar_visualizacion_sacadicos(df_raw, events_report, umbrales, output_file
     if stimulus_events:
         y_lim_ax1 = ax1.get_ylim()
         for i, event in enumerate(stimulus_events):
-            color = 'cyan' if i % 2 == 0 else 'magenta'
+            color = 'red' if i % 2 == 0 else 'magenta'
             start_s = event['start_time_ms'] / 1000.0
             
             ax1.axvline(x=start_s, color=color, linestyle='--', alpha=0.7, zorder=1)
