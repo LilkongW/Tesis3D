@@ -27,7 +27,7 @@ MAX_ELLIPTICAL_FIT_RATIO = 1.20 # No más de 120% (para permitir ruido)
 HORIZONTALITY_TOLERANCE = 1.30 
 # -----------------------------------------------
 
-VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Venegas/Venegas_intento_1.mp4" # <-- CHANGE THIS PATH
+VIDEO_PATH = r"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_1\Victor\Victor3_intento_1.mp4" # <-- CHANGE THIS PATH
 
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 
