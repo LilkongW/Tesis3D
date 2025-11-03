@@ -60,7 +60,7 @@ def capture_webcam_stream():
     actual_width = int(cap_webcam.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_height = int(cap_webcam.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    print(f"[WEBCAM] Configuración aplicada:")
+    print("[WEBCAM] Configuración aplicada:")
     print(f"[WEBCAM]   - FPS: {actual_fps}")
     print(f"[WEBCAM]   - Resolución: {actual_width}x{actual_height}")
     
@@ -446,7 +446,7 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     # Verificar compatibilidad de FPS
     if OUTPUT_FPS != 30:
         print(f"[VIDEO] ⚠️  ADVERTENCIA: OUTPUT_FPS={OUTPUT_FPS} pero la webcam está configurada a 30 FPS")
-        print(f"[VIDEO] ⚠️  Se recomienda OUTPUT_FPS=30 para sincronización perfecta")
+        print("[VIDEO] ⚠️  Se recomienda OUTPUT_FPS=30 para sincronización perfecta")
     
     # ==================================================================
     # INICIALIZACIÓN ÚNICA - Se hace UNA SOLA VEZ

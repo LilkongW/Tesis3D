@@ -5,7 +5,7 @@ import math
 import sys 
 
 # --- 1. CONFIGURACIÓN ---
-ANIMATION_FPS = 60.0 # FPS del bucle principal (y del punto azul)
+ANIMATION_FPS = 60.0 # <-- CAMBIO 1: Bucle principal a 60 FPS
 TRUTH_FPS = 30.0     # FPS del estímulo (punto rojo)
 # (Offset y Timestamps del CSV se ignorarán)
 
@@ -145,13 +145,13 @@ while running:
                 
     # 2. Obtener posiciones (¡LÓGICA DE SINCRONIZACIÓN 2:1!)
     
-    # Índice del punto Rojo (30 FPS)
-    # se actualiza cada 2 fotogramas de la animación
+    # Índice del punto Rojo (Datos a 30 FPS)
+    # se actualiza cada 2 fotogramas de la animación (60 / 2 = 30 FPS)
     frame_index_truth = frame_index_anim // 2 
     
-    # Índice del punto Azul (60 FPS)
-    # coincide con el fotograma de la animación
-    frame_index_gaze = frame_index_anim
+    # Índice del punto Azul (Datos a 30 FPS)
+    # se actualiza cada 2 fotogramas de la animación (60 / 2 = 30 FPS)
+    frame_index_gaze = frame_index_anim // 2 # <-- CAMBIO 2: Sincronizado con el rojo
     
     # Condición de salida
     if frame_index_truth >= len(ground_truth_path) or frame_index_gaze >= len(gaze_path):
@@ -172,9 +172,9 @@ while running:
     # Dibujar los puntos actuales (brillantes)
     pygame.draw.circle(screen, COLOR_TARGET, (int(truth_pos[0]), int(truth_pos[1])), 15)
     pygame.draw.circle(screen, COLOR_GAZE, (int(gaze_pos[0]), int(gaze_pos[1])), 10)
-    
+
     # Dibujar texto de tiempo
-    current_time_s = frame_index_anim / ANIMATION_FPS
+    current_time_s = frame_index_anim / ANIMATION_FPS # El tiempo se basa en el reloj de 60 FPS
     time_text = font.render(f"Tiempo: {current_time_s:.2f}s", True, COLOR_TEXT)
     screen.blit(time_text, (10, 10))
     
@@ -183,7 +183,7 @@ while running:
     
     # 5. Siguiente fotograma (a 60 FPS)
     frame_index_anim += 1
-    clock.tick(ANIMATION_FPS)
+    clock.tick(ANIMATION_FPS) # Se limita a 60 FPS
 
 # --- 6. Salir ---
 pygame.quit()
