@@ -6,17 +6,17 @@ from utils.eye_tracker_utils import process_video_from_path
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (220, 250)
+    prev = (220, 240) # (ancho,alto)
 
-    EXP_NUM = 2
+    EXP_NUM = 3
 
     NOMBRE= "Victor"
 
     # Carpeta que contiene los videos a procesar
-    VIDEO_FOLDER_PATH = rf"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_{EXP_NUM}\{NOMBRE}"  # <-- RUTA DE VIDEOS
+    VIDEO_FOLDER_PATH = rf"Videos/Experimento_{EXP_NUM}/{NOMBRE}"  # <-- RUTA DE VIDEOS
     
     # Carpeta donde se guardarán los archivos CSV generados
-    CSV_OUTPUT_PATH = rf"C:\Users\Victor\Documents\Tesis3D\Data\Experimento_{EXP_NUM}\{NOMBRE}_data"  # <-- RUTA DE SALIDA DE CSV
+    CSV_OUTPUT_PATH = rf"Data/Experimento_{EXP_NUM}/{NOMBRE}_data"  # <-- RUTA DE SALIDA DE CSV
 
     # ---------------------------------
     
@@ -66,14 +66,14 @@ def main():
         # Crear la ruta completa de salida para el CSV
         full_csv_path = os.path.join(CSV_OUTPUT_PATH, csv_file_name)
         
-        print(f"\n--- [INICIANDO] Procesando: {video_name} ---")
+        print(f"/n--- [INICIANDO] Procesando: {video_name} ---")
         
         # Llamar a la función de procesamiento, pasando las nuevas rutas
         process_video_from_path(full_video_path, video_name, full_csv_path,prev)
         
         print(f"--- [COMPLETADO] Video: {video_name} ---")
     
-    print("\nTodos los videos en la carpeta han sido procesados.")
+    print("/nTodos los videos en la carpeta han sido procesados.")
 
 if __name__ == "__main__":
     main()

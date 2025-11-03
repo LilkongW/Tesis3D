@@ -2,15 +2,18 @@ import pygame
 import numpy as np
 import imageio
 import os
-import sys # Importar para salida limpia
+import sys
 
-# 1. Inicializar pygame
+# --- 2. OBTENER DIMENSIONES DE PANTALLA ---
+print("Obteniendo resolución de pantalla con Pygame...")
+
 pygame.init()
+display_info = pygame.display.Info()
+WIDTH, HEIGHT = display_info.current_w, display_info.current_h
 
-# 2. Configuración de pantalla
-WIDTH, HEIGHT = 1280, 720 # Tamaño de ventana fijo para mejor grabación (Horizontal)
-screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Partícula en Espiral Elíptica con Velocidad Constante")
+# Creamos un Surface en memoria para dibujar
+offscreen_surface = pygame.Surface((WIDTH, HEIGHT))
+
 
 # 3. Configuración visual
 circle_radius = 20
@@ -24,8 +27,8 @@ theta_max = 15 * np.pi
 velocity = 230
 
 max_r = k * theta_max
-A = (WIDTH / 2) / max_r * 0.95 
-B = (HEIGHT / 2) / max_r * 0.95 
+A = (WIDTH / 2) / max_r * 0.95
+B = (HEIGHT / 2) / max_r * 0.95
 
 # 5. Calcular la trayectoria elíptica
 num_points = 5000
@@ -61,44 +64,64 @@ interp_y = interp_y[::-1]
 # 8. Variables de animación y guardado
 running = True
 index = 0
-clock = pygame.time.Clock()
-frames = []
+clock = pygame.time.Clock() 
+# frames = [] # 🔑 ELIMINADO: ¡No guardaremos fotogramas en RAM!
 
 save_path = r"/home/vit/Documentos/Tesis3D/Videos"
 os.makedirs(save_path, exist_ok=True)
+output_path = os.path.join(save_path, "espiral_eliptica_animacion_sin_mostrar.mp4")
+
+# 🔑 MODIFICACIÓN: Crear el "escritor" de video ANTES del bucle
+writer = None # Inicializar en None
+try:
+    print(f"🎥 Preparando archivo de video en: {output_path}")
+    writer = imageio.get_writer(output_path, fps=FPS)
+except ValueError as e:
+    if "Could not find a backend" in str(e):
+        print("-" * 50)
+        print("🚨 ERROR: FALLÓ LA INICIALIZACIÓN DEL VIDEO.")
+        print("Debes instalar el backend FFMPEG. Ejecuta:")
+        print("pip install 'imageio[ffmpeg]'")
+        print("-" * 50)
+    else:
+         print(f"🚨 ERROR DESCONOCIDO AL INICIAR EL ESCRITOR: {e}")
+    pygame.quit()
+    sys.exit()
+except Exception as e:
+    print(f"🚨 OTRO ERROR al iniciar el escritor: {e}")
+    pygame.quit()
+    sys.exit()
+
 
 # 9. Bucle de animación
 try:
+    print(f"Generando {num_frames} fotogramas en segundo plano...")
     while running:
-        # Manejar eventos de salida
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                running = False
-
-        clock.tick(FPS)
-
-        screen.fill(bg_color)
+        
+        # 🔑 MODIFICACIÓN: Dibujar en el Surface en memoria
+        offscreen_surface.fill(bg_color)
 
         # Dibujar el círculo en la posición actual
         current_pos = (int(interp_x[index]), int(interp_y[index]))
-        pygame.draw.circle(screen, circle_color, current_pos, circle_radius)
+        pygame.draw.circle(offscreen_surface, circle_color, current_pos, circle_radius)
 
-        pygame.display.flip()
+        # Capturar el fotograma del Surface en memoria
+        frame = pygame.surfarray.array3d(offscreen_surface)
 
-        # Capturar el fotograma y corregir la orientación para imageio/FFMPEG 
-        # pygame.surfarray.array3d(screen) produce (WIDTH, HEIGHT, 3).
-        # imageio/FFMPEG espera (HEIGHT, WIDTH, 3).
-        frame = pygame.surfarray.array3d(screen)
-        
-        # 🔑 CORRECCIÓN: Transponer el arreglo para cambiar de (WIDTH, HEIGHT, 3) a (HEIGHT, WIDTH, 3)
-        frame = np.swapaxes(frame, 0, 1) # Intercambia el eje 0 (WIDTH) por el eje 1 (HEIGHT)
+        # CORRECCIÓN: Transponer el arreglo para cambiar de (WIDTH, HEIGHT, 3) a (HEIGHT, WIDTH, 3)
+        frame = np.swapaxes(frame, 0, 1)
 
-        frames.append(frame)
+        # 🔑 MODIFICACIÓN: Escribir el fotograma directamente al disco
+        writer.append_data(frame)
 
         # Mover el círculo a la siguiente posición
         if index < len(interp_x) - 1:
             index += 1
+            # Opcional: Mostrar progreso para bucles largos
+            if index % (num_frames // 20) == 0: # Muestra el progreso más a menudo
+                print(f"  Progreso: {index}/{num_frames} fotogramas ({int(index/num_frames*100)}%)")
         else:
+            print("  Progreso: ¡Completado!")
             running = False
 
 except Exception as e:
@@ -106,28 +129,13 @@ except Exception as e:
     running = False
 
 finally:
-    pygame.quit()
+    pygame.quit() # Es buena práctica liberar los recursos de Pygame
     
-    # 10. Guardar la animación como video
-    if frames:
-        output_path = os.path.join(save_path, "espiral_eliptica_animacion.mp4")
-        
-        try:
-            print(f"🎬 Iniciando guardado de video... ({len(frames)} fotogramas)")
-            imageio.mimsave(output_path, frames, fps=FPS)
-            print(f"✅ Video guardado como '{output_path}'")
-        except ValueError as e:
-            if "Could not find a backend" in str(e):
-                print("-" * 50)
-                print("🚨 ERROR: FALLÓ EL GUARDADO DEL VIDEO.")
-                print("Debes instalar el backend FFMPEG. Ejecuta:")
-                print("pip install 'imageio[ffmpeg]'")
-                print("-" * 50)
-            else:
-                 print(f"🚨 ERROR DESCONOCIDO AL GUARDAR EL VIDEO: {e}")
-        except Exception as e:
-            print(f"🚨 OTRO ERROR al guardar el video: {e}")
+    # 10. 🔑 MODIFICACIÓN: Cerrar el "escritor" de video
+    if writer is not None:
+        writer.close()
+        print(f"✅ Video guardado como '{output_path}'")
     else:
-        print("❌ No se capturaron fotogramas para guardar.")
+        print("❌ No se generó ningún video (el 'writer' no se inicializó).")
     
     sys.exit()

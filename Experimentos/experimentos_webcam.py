@@ -3,16 +3,19 @@ import os
 import time
 import numpy as np
 import queue
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 
 # Índice de la webcam
 WEBCAM_INDEX = 1    
 
 # Número de experimento (para seleccionar video de estímulo)
-EXP_NUM = 1
+EXP_NUM = 3
+
+# FPS de grabación de la webcam
+OUTPUT_FPS = 30
 
 # Cola para almacenar frames de la Webcam
-frame_queue = queue.Queue(maxsize=60)
+frame_queue = queue.Queue(maxsize=120)
 screen_width, screen_height = 1920, 1080
 
 # Variables globales para las dimensiones
@@ -23,12 +26,13 @@ recording_active = False
 capture_active = True
 
 # Eventos para sincronización
-videowriter_ready = Event()
 start_recording = Event()
+recording_stopped = Event()
 
 # Variable global para el VideoWriter actual
 current_video_writer = None
 current_output_path = None
+writer_lock = Lock()
 
 
 def capture_webcam_stream():
@@ -43,13 +47,34 @@ def capture_webcam_stream():
         capture_active = False
         return
     
-    # Obtener dimensiones
+    # Configurar webcam a 30 FPS
+    print("[WEBCAM] Configurando webcam a 30 FPS...")
+    cap_webcam.set(cv2.CAP_PROP_FPS, 30)
+    
+    # Configurar resolución estándar para asegurar 30 FPS estables
+    cap_webcam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap_webcam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+    
+    # Verificar configuración
+    actual_fps = cap_webcam.get(cv2.CAP_PROP_FPS)
+    actual_width = int(cap_webcam.get(cv2.CAP_PROP_FRAME_WIDTH))
+    actual_height = int(cap_webcam.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    print(f"[WEBCAM] Configuración aplicada:")
+    print(f"[WEBCAM]   - FPS: {actual_fps}")
+    print(f"[WEBCAM]   - Resolución: {actual_width}x{actual_height}")
+    
+    if actual_fps < 25:
+        print(f"[WEBCAM] ⚠️  ADVERTENCIA: FPS muy bajos ({actual_fps})")
+        print("[WEBCAM] ⚠️  La sincronización puede no ser precisa")
+    
+    # Obtener dimensiones después de la configuración
     ret, first_frame = cap_webcam.read()
     if ret:
         cam_height, cam_width, _ = first_frame.shape
-        print(f"[WEBCAM] ✓ Resolución detectada: {cam_width}x{cam_height}")
+        print(f"[WEBCAM] ✓ Resolución real capturada: {cam_width}x{cam_height}")
         if not frame_queue.full():
-            frame_queue.put(first_frame)
+            frame_queue.put((first_frame, time.time()))
     else:
         print("[WEBCAM] ❌ No se pudo leer el primer frame.")
         cap_webcam.release()
@@ -65,6 +90,8 @@ def capture_webcam_stream():
             print("[WEBCAM] ❌ Error al leer frame. Deteniendo captura.")
             break
         
+        timestamp = time.time()
+        
         # Mantener solo los frames más recientes
         if frame_queue.full():
             try:
@@ -72,7 +99,7 @@ def capture_webcam_stream():
             except queue.Empty:
                 pass
         
-        frame_queue.put(frame)
+        frame_queue.put((frame, timestamp))
         frame_count += 1
         
         current_time = time.time()
@@ -104,45 +131,68 @@ def recording_worker():
             break
         
         # Verificar que tenemos un VideoWriter válido
-        if current_video_writer is None or not current_video_writer.isOpened():
-            print("[RECORDER] ❌ Error: No hay VideoWriter válido")
-            start_recording.clear()
-            continue
+        with writer_lock:
+            if current_video_writer is None or not current_video_writer.isOpened():
+                print("[RECORDER] ❌ Error: No hay VideoWriter válido")
+                start_recording.clear()
+                continue
         
         print(f"[RECORDER] 🔴 GRABACIÓN INICIADA: {current_output_path}")
+        recording_stopped.clear()
         
         frame_count = 0
+        dropped_frames = 0
         recording_start_time = time.time()
         last_fps_print_time = time.time()
+        last_frame_count = 0
         
         # Grabar mientras recording_active sea True
         while recording_active and capture_active:
             try:
-                frame = frame_queue.get(timeout=0.5)
-                current_video_writer.write(frame)
-                frame_count += 1
+                frame, timestamp = frame_queue.get(timeout=0.5)
+                
+                with writer_lock:
+                    if current_video_writer is not None:
+                        current_video_writer.write(frame)
+                        frame_count += 1
                 
                 current_time = time.time()
-                if current_time - last_fps_print_time >= 10:
-                    fps = frame_count / (current_time - last_fps_print_time)
+                if current_time - last_fps_print_time >= 5:
+                    frames_in_interval = frame_count - last_frame_count
+                    fps = frames_in_interval / (current_time - last_fps_print_time)
                     elapsed = current_time - recording_start_time
-                    print(f"[RECORDER] FPS: {fps:.2f} | Frames: {frame_count} | Tiempo: {elapsed:.2f}s")
+                    queue_size = frame_queue.qsize()
+                    print(f"[RECORDER] FPS: {fps:.2f} | Total frames: {frame_count} | Tiempo: {elapsed:.2f}s | Cola: {queue_size}")
                     last_fps_print_time = current_time
+                    last_frame_count = frame_count
                 
             except queue.Empty:
+                dropped_frames += 1
+                if dropped_frames % 10 == 0:
+                    print(f"[RECORDER] ⚠️  Frames perdidos por cola vacía: {dropped_frames}")
                 if not capture_active:
                     break
                 continue
         
         # Finalizar grabación
         recording_duration = time.time() - recording_start_time
+        expected_frames = int(recording_duration * OUTPUT_FPS)
         print("[RECORDER] ⏹️  Grabación detenida")
-        print(f"[RECORDER] ✓ Frames: {frame_count} | Duración: {recording_duration:.2f}s")
+        print(f"[RECORDER] ✓ Frames grabados: {frame_count}")
+        print(f"[RECORDER] ✓ Frames esperados (~{OUTPUT_FPS} FPS): {expected_frames}")
+        print(f"[RECORDER] ✓ Duración: {recording_duration:.2f}s")
+        print(f"[RECORDER] ✓ FPS promedio real: {frame_count/recording_duration:.2f}")
+        if dropped_frames > 0:
+            print(f"[RECORDER] ⚠️  Total frames perdidos: {dropped_frames}")
         
         # Liberar el VideoWriter
-        if current_video_writer is not None:
-            current_video_writer.release()
-            current_video_writer = None
+        with writer_lock:
+            if current_video_writer is not None:
+                current_video_writer.release()
+                current_video_writer = None
+        
+        # Señalizar que la grabación terminó
+        recording_stopped.set()
         
         # Limpiar señal para próxima iteración
         start_recording.clear()
@@ -154,24 +204,26 @@ def prepare_video_writer(output_path, width, height):
     """Prepara un nuevo VideoWriter para la siguiente iteración"""
     global current_video_writer, current_output_path
     
-    print(f"[SETUP] Preparando VideoWriter: {output_path}")
+    print(f"[SETUP] Preparando VideoWriter a {OUTPUT_FPS} FPS: {output_path}")
     
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    writer = cv2.VideoWriter(output_path, fourcc, 30.0, (width, height))
+    writer = cv2.VideoWriter(output_path, fourcc, OUTPUT_FPS, (width, height))
     
     if not writer.isOpened():
         print("[SETUP] ⚠️  Falló 'mp4v', intentando 'XVID' (.avi)")
         output_path = output_path.replace(".mp4", ".avi")
         fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        writer = cv2.VideoWriter(output_path, fourcc, 30.0, (width, height))
+        writer = cv2.VideoWriter(output_path, fourcc, OUTPUT_FPS, (width, height))
     
     if not writer.isOpened():
         print("[SETUP] ❌ Error fatal: No se pudo inicializar VideoWriter")
         return False
     
-    current_video_writer = writer
-    current_output_path = output_path
-    print("[SETUP] ✓ VideoWriter listo")
+    with writer_lock:
+        current_video_writer = writer
+        current_output_path = output_path
+    
+    print(f"[SETUP] ✓ VideoWriter listo a {OUTPUT_FPS} FPS")
     return True
 
 
@@ -225,7 +277,7 @@ def purge_frame_queue():
 
 
 def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_intento, 
-                             exp_width, exp_height, save_path, is_first_iteration):
+                             exp_width, exp_height, save_path, is_first_iteration, total_frames):
     """Ejecuta UNA iteración del experimento"""
     global recording_active
     
@@ -262,9 +314,12 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
     cv2.imshow("Experiment Video", countdown_frame)
     cv2.waitKey(1000)
     
-    # Purgar cola antes de empezar
+    # CRÍTICO: Purgar cola JUSTO antes de empezar
     purged = purge_frame_queue()
     print(f"[INTENTO {numero_intento}] Cola purgada ({purged} frames)")
+    
+    # Pequeña espera para que la cola se estabilice
+    time.sleep(0.1)
     
     # Reiniciar video al inicio
     cap_experiment.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -273,37 +328,44 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
     print(f"   ¡INICIANDO INTENTO {numero_intento}!")
     print(f"{'⚡'*35}\n")
     
-    # Reproducir experimento y grabar
+    # SINCRONIZACIÓN MEJORADA: Activar grabación ANTES del loop
+    recording_active = True
+    start_recording.set()
+    
+    # Pequeño delay para asegurar que el worker está listo
+    time.sleep(0.05)
+    
+    # Reproducir experimento
     next_frame_time = time.time()
-    first_frame_shown = False
+    frame_interval = 1.0 / exp_fps
+    
+    experiment_start_time = time.time()
+    experiment_frame_count = 0
     
     while True:
         current_time = time.time()
         
-        # Control de timing
+        # Control de timing más preciso
         if current_time < next_frame_time:
-            delay_ms = int((next_frame_time - current_time) * 1000)
-            if delay_ms > 0:
-                key = cv2.waitKey(delay_ms) & 0xFF
-                if key == ord('q'):
-                    print(f"[INTENTO {numero_intento}] Detenido manualmente.")
-                    recording_active = False
-                    return False
-                continue
-        
-        next_frame_time = current_time + (1.0 / exp_fps)
+            delay_ms = max(1, int((next_frame_time - current_time) * 1000))
+            key = cv2.waitKey(delay_ms) & 0xFF
+            if key == ord('q'):
+                print(f"[INTENTO {numero_intento}] Detenido manualmente.")
+                recording_active = False
+                return False
+            continue
         
         # Leer frame del experimento
         ret_exp, frame_exp = cap_experiment.read()
         if not ret_exp:
+            experiment_duration = time.time() - experiment_start_time
             print(f"[INTENTO {numero_intento}] ✓ Video finalizado.")
+            print(f"[EXPERIMENTO] Duración real: {experiment_duration:.2f}s")
+            print(f"[EXPERIMENTO] Frames mostrados: {experiment_frame_count}/{total_frames}")
+            print(f"[EXPERIMENTO] FPS promedio: {experiment_frame_count/experiment_duration:.2f}")
             break
         
-        # ¡SINCRONIZACIÓN! Activar grabación en el primer frame
-        if not first_frame_shown:
-            recording_active = True
-            start_recording.set()  # Señal al worker
-            first_frame_shown = True
+        experiment_frame_count += 1
         
         # Mostrar frame del experimento
         aspect_ratio = exp_width / exp_height
@@ -322,21 +384,26 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
         
         cv2.imshow("Experiment Video", display_frame)
         
+        # Actualizar próximo tiempo de frame
+        next_frame_time += frame_interval
+        
+        # Check rápido de tecla
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
             print(f"[INTENTO {numero_intento}] Detenido manualmente.")
             recording_active = False
             return False
     
-    # Detener grabación
+    # Detener grabación INMEDIATAMENTE
     print(f"\n{'🛑'*35}")
     print(f"   FINALIZANDO INTENTO {numero_intento}")
     print(f"{'🛑'*35}\n")
     
     recording_active = False
     
-    # Esperar a que el worker termine de grabar
-    time.sleep(0.5)
+    # Esperar a que el worker termine (con timeout)
+    if not recording_stopped.wait(timeout=2.0):
+        print(f"[INTENTO {numero_intento}] ⚠️  Timeout esperando finalización de grabación")
     
     print(f"[INTENTO {numero_intento}] ✓ Completado\n")
     return True
@@ -369,7 +436,17 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     if exp_fps <= 0:
         exp_fps = 30.0
     
+    total_frames = int(cap_experiment.get(cv2.CAP_PROP_FRAME_COUNT))
+    exp_duration = total_frames / exp_fps
+    
     print(f"[VIDEO] Experimento: {exp_width}x{exp_height} @ {exp_fps} FPS")
+    print(f"[VIDEO] Duración: {exp_duration:.2f}s ({total_frames} frames)")
+    print(f"[VIDEO] Grabación webcam: {OUTPUT_FPS} FPS")
+    
+    # Verificar compatibilidad de FPS
+    if OUTPUT_FPS != 30:
+        print(f"[VIDEO] ⚠️  ADVERTENCIA: OUTPUT_FPS={OUTPUT_FPS} pero la webcam está configurada a 30 FPS")
+        print(f"[VIDEO] ⚠️  Se recomienda OUTPUT_FPS=30 para sincronización perfecta")
     
     # ==================================================================
     # INICIALIZACIÓN ÚNICA - Se hace UNA SOLA VEZ
@@ -395,6 +472,7 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     
     print(f"[SISTEMA] ✓ Webcam activa: {cam_width}x{cam_height}")
     print("[SISTEMA] ✓ Worker de grabación activo")
+    print(f"[SISTEMA] ✓ Grabación configurada a {OUTPUT_FPS} FPS")
     print("[SISTEMA] ✓ Todo listo para comenzar\n")
     
     # ==================================================================
@@ -412,7 +490,8 @@ def run_all_experiments(nombre_persona, total_iteraciones):
         success = run_experiment_iteration(
             cap_experiment, exp_fps, nombre_persona, str(i),
             exp_width, exp_height, save_path, 
-            is_first_iteration=(i == 1)
+            is_first_iteration=(i == 1),
+            total_frames=total_frames
         )
         
         if not success:
@@ -454,7 +533,7 @@ def run_all_experiments(nombre_persona, total_iteraciones):
 if __name__ == "__main__":
     
     print("\n" + "="*70)
-    print("   SISTEMA DE EXPERIMENTOS - FLUJO CONTINUO")
+    print("   SISTEMA DE EXPERIMENTOS - SINCRONIZACIÓN MEJORADA")
     print("="*70 + "\n")
     
     nombre_persona = input("Nombre de la persona: ").strip()
@@ -472,6 +551,7 @@ if __name__ == "__main__":
     print("\n" + "-"*70)
     print(f"✓ Participante: {nombre_persona}")
     print(f"✓ Iteraciones: {total_iteraciones}")
+    print(f"✓ FPS de salida: {OUTPUT_FPS}")
     print("-"*70)
     
     input("\nPresiona ENTER para comenzar...")

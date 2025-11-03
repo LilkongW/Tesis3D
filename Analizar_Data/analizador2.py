@@ -7,9 +7,9 @@ import os
 import glob 
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
-NOMBRE = "Victor"
+NOMBRE = "Josuep"
 # Directorio de ENTRADA
-EXP_NUM = 2
+EXP_NUM = 2 # <--- ESTA VARIABLE AHORA CONTROLA LOS ESTÍMULOS
 INPUT_DIR = fr"Data/Experimento_{EXP_NUM}/{NOMBRE}_data"
 # Directorio de SALIDA
 OUTPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data"
@@ -33,9 +33,13 @@ UMBRALES_3D = {
 SAVGOL_WINDOW = 5
 SAVGOL_POLY = 2
 
-# --- NUEVA FUNCIÓN: DEFINICIÓN DE ESTÍMULOS ---
+# --- DEFINICIÓN DE ESTÍMULOS ---
+
 def get_stimulus_events_exp1(offset_ms=0):
-    print(f"Generando marcas de tiempo de estímulos para Exp 1 (Offset: {offset_ms}ms)...")
+    """
+    Define los 9 eventos de estímulo para el Experimento 1.
+    """
+    print(f"Generando marcas de tiempo de estímulos para Exp 1 (9 puntos) (Offset: {offset_ms}ms)...")
     DURACION_PUNTO_MS = 2000.0
     N_PUNTOS = 9
     eventos_estimulo = []
@@ -44,6 +48,37 @@ def get_stimulus_events_exp1(offset_ms=0):
         "P4 (Med-Izq)", "P5 (Med-Cen)", "P6 (Med-Der)",
         "P7 (Inf-Izq)", "P8 (Inf-Cen)", "P9 (Inf-Der)"
     ]
+    for i in range(N_PUNTOS):
+        anim_start_time = i * DURACION_PUNTO_MS
+        anim_end_time = (i + 1) * DURACION_PUNTO_MS
+        eventos_estimulo.append({
+            'label': posiciones[i],
+            'start_time_ms': anim_start_time + offset_ms,
+            'end_time_ms': anim_end_time + offset_ms
+        })
+    return eventos_estimulo
+
+def get_stimulus_events_exp2(offset_ms=0):
+    """
+    Define los 10 eventos de estímulo para el Experimento 2 (5 puntos x 2 repeticiones).
+    """
+    print(f"Generando marcas de tiempo de estímulos para Exp 2 (5 puntos x 2 rep) (Offset: {offset_ms}ms)...")
+    DURACION_PUNTO_MS = 2000.0
+    eventos_estimulo = []
+    
+    # Etiquetas basadas en la secuencia de Crear_animaciones.py
+    posiciones_base = [
+        "P1 (Sup-Izq)",
+        "P2 (Sup-Der)",
+        "P3 (Inf-Izq)",
+        "P4 (Inf-Der)",
+        "P5 (Centro)"
+    ]
+    
+    # Repetir la secuencia (sequence * 2) y añadir "(R)" a la repetición
+    posiciones = posiciones_base + [f"{p} (R)" for p in posiciones_base]
+    N_PUNTOS = len(posiciones) # 10 puntos
+
     for i in range(N_PUNTOS):
         anim_start_time = i * DURACION_PUNTO_MS
         anim_end_time = (i + 1) * DURACION_PUNTO_MS
@@ -497,12 +532,23 @@ def generar_histograma_aceleracion(df_raw, umbrales, output_file):
 # --- FUNCIÓN PRINCIPAL (MODIFICADA) ---
 def main():
     print(f"Iniciando análisis por lotes en el directorio: {INPUT_DIR}")
-    
+    print(f"--- EXPERIMENTO NÚMERO {EXP_NUM} ---")
+
+    # --- INICIO DE MODIFICACIÓN: Seleccionar eventos de estímulo según EXP_NUM ---
+    eventos_estimulo = None
     try:
-        eventos_estimulo_exp1 = get_stimulus_events_exp1(OFFSET_MS)
+        if EXP_NUM == 1:
+            eventos_estimulo = get_stimulus_events_exp1(OFFSET_MS)
+        elif EXP_NUM == 2:
+            eventos_estimulo = get_stimulus_events_exp2(OFFSET_MS)
+        else:
+            print(f"ADVERTENCIA: EXP_NUM ({EXP_NUM}) no reconocido. No se cargarán marcas de estímulo.")
+            eventos_estimulo = [] # Lista vacía para evitar errores en graficación
+            
     except Exception as e:
-        print(f"ERROR: No se pudo generar la lista de eventos de estímulo. Error: {e}")
+        print(f"ERROR: No se pudo generar la lista de eventos de estímulo para EXP_NUM {EXP_NUM}. Error: {e}")
         sys.exit(1)
+    # --- FIN DE MODIFICACIÓN ---
         
     patron_busqueda = os.path.join(INPUT_DIR, f"{NOMBRE}*_data.csv")
     lista_archivos_csv = glob.glob(patron_busqueda)
@@ -591,9 +637,12 @@ def main():
 
         # 7. Generar Gráficos
         try:
-            generar_visualizacion_combinada(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_comb, stimulus_events=eventos_estimulo_exp1)
-            generar_visualizacion_fijaciones(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_fix, stimulus_events=eventos_estimulo_exp1)
-            generar_visualizacion_sacadicos(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_sac, stimulus_events=eventos_estimulo_exp1)
+            # --- INICIO DE MODIFICACIÓN: Usar la variable dinámica 'eventos_estimulo' ---
+            generar_visualizacion_combinada(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_comb, stimulus_events=eventos_estimulo)
+            generar_visualizacion_fijaciones(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_fix, stimulus_events=eventos_estimulo)
+            generar_visualizacion_sacadicos(df_completo, reporte_final_combinado, UMBRALES_3D, output_plot_sac, stimulus_events=eventos_estimulo)
+            # --- FIN DE MODIFICACIÓN ---
+            
             generar_histograma_velocidad(df_completo, UMBRALES_3D, output_plot_hist_vel)
             generar_histograma_aceleracion(df_completo, UMBRALES_3D, output_plot_hist_acel)
         except Exception as e:

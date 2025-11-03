@@ -184,14 +184,16 @@ def process_frames(frame, gray_frame_clahe):
         optimized_contour = optimize_contours_by_angle([best_pupil_contour])
         ellipse = None
         try:
-            if len(optimized_contour) >= 5: ellipse = cv2.fitEllipse(optimized_contour)
-            elif len(best_pupil_contour) >= 5: ellipse = cv2.fitEllipse(best_pupil_contour)
+            if len(optimized_contour) >= 5:
+                ellipse = cv2.fitEllipse(optimized_contour)
+            elif len(best_pupil_contour) >= 5:
+                ellipse = cv2.fitEllipse(best_pupil_contour)
         except cv2.error: ellipse = None
 
         if ellipse is not None:
             final_rotated_rect = ellipse
             center_x_raw, center_y_raw = map(int, final_rotated_rect[0])
-            stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=3)
+            stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=2)
             center_x, center_y = stable_pupil_center if stable_pupil_center else (center_x_raw, center_y_raw)
             
             # --- <<<--- INICIO: LÓGICA DE DETECCIÓN DE IRIS (DE DEBUG_IRIS.PY) ---
