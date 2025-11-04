@@ -18,9 +18,9 @@ VENTANA_BUSQUEDA_ATRAS_MS = 300.0      # Buscar fijación hasta 300ms ANTES del 
 OFFSET_MS = 500.0  # El mismo offset usado en el análisis original
 
 # Umbrales de clasificación
-UMBRAL_ANTICIPACION_MS = -50.0    # Menos de -50ms = anticipación clara
-UMBRAL_REACCION_RAPIDA_MS = 150.0 # 0-150ms = reacción rápida
-UMBRAL_REACCION_NORMAL_MS = 300.0 # 150-300ms = reacción normal
+UMBRAL_ANTICIPACION_MS = -50.0     # Menos de -50ms = anticipación clara
+UMBRAL_REACCION_RAPIDA_MS = 150.0  # 0-150ms = reacción rápida
+UMBRAL_REACCION_NORMAL_MS = 300.0  # 150-300ms = reacción normal
 # Mayor a 300ms = reacción lenta
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -67,7 +67,7 @@ def get_stimulus_events_exp2(offset_ms=0):
         })
     return eventos_estimulo
 
-# ========== ANÁLISIS DE TIEMPO DE REACCIÓN ==========
+# ========== ANÁLISIS DE TIEMPO DE REACCIÓN (CORREGIDO) ==========
 def analizar_tiempo_reaccion(fijaciones_df, eventos_estimulo, ventana_adelante_ms=1000.0, ventana_atras_ms=300.0):
     """
     Calcula el tiempo de reacción y cuenta fijaciones por cada estímulo.
@@ -81,6 +81,13 @@ def analizar_tiempo_reaccion(fijaciones_df, eventos_estimulo, ventana_adelante_m
     """
     resultados = []
     
+    # === INICIO DE LA CORRECCIÓN ===
+    # Copiamos el DF y calculamos 'end_time_ms' para CADA fijación.
+    # Esto es crucial para detectar el solapamiento (overlap).
+    fijaciones_df_con_fin = fijaciones_df.copy()
+    fijaciones_df_con_fin['end_time_ms'] = fijaciones_df_con_fin['start_time_ms'] + fijaciones_df_con_fin['duration_ms']
+    # === FIN DE LA CORRECCIÓN ===
+
     for idx, estimulo in enumerate(eventos_estimulo):
         stim_start = estimulo['start_time_ms']
         stim_end = estimulo['end_time_ms']
@@ -91,19 +98,23 @@ def analizar_tiempo_reaccion(fijaciones_df, eventos_estimulo, ventana_adelante_m
         ventana_fin = stim_start + ventana_adelante_ms  # Margen hacia adelante
         
         # Buscar la fijación más cercana al inicio del estímulo (puede ser antes o después)
-        fijaciones_ventana = fijaciones_df[
-            (fijaciones_df['start_time_ms'] >= ventana_inicio) & 
-            (fijaciones_df['start_time_ms'] <= ventana_fin)
+        # Usamos el DF con 'end_time_ms' (fijaciones_df_con_fin)
+        fijaciones_ventana = fijaciones_df_con_fin[
+            (fijaciones_df_con_fin['start_time_ms'] >= ventana_inicio) & 
+            (fijaciones_df_con_fin['start_time_ms'] <= ventana_fin)
         ].copy()
         
         # Calcular distancia al inicio del estímulo
         fijaciones_ventana['distancia_ms'] = fijaciones_ventana['start_time_ms'] - stim_start
         
-        # Contar fijaciones durante TODO el período del estímulo (solo las que están dentro)
-        fijaciones_durante_estimulo = fijaciones_df[
-            (fijaciones_df['start_time_ms'] >= stim_start) & 
-            (fijaciones_df['start_time_ms'] < stim_end)
+        # === INICIO DE LA CORRECCIÓN ===
+        # Contar fijaciones que se SOLAPAN con el período del estímulo
+        # Lógica de solapamiento: (inicio_fij < fin_estim) Y (fin_fij > inicio_estim)
+        fijaciones_durante_estimulo = fijaciones_df_con_fin[
+            (fijaciones_df_con_fin['start_time_ms'] < stim_end) & 
+            (fijaciones_df_con_fin['end_time_ms'] > stim_start)
         ]
+        # === FIN DE LA CORRECCIÓN ===
         
         num_fijaciones = len(fijaciones_durante_estimulo)
         
@@ -153,6 +164,7 @@ def analizar_tiempo_reaccion(fijaciones_df, eventos_estimulo, ventana_adelante_m
         })
     
     return pd.DataFrame(resultados)
+
 
 # ========== VISUALIZACIONES ==========
 def graficar_tiempos_reaccion(resultados_df, output_file):
@@ -458,7 +470,7 @@ def main():
         # Estadísticas globales
         valid_global = df_consolidado.dropna(subset=['tiempo_reaccion_ms'])
         if not valid_global.empty:
-            print(f"\n📊 ESTADÍSTICAS GLOBALES (todos los archivos):")
+            print(f"\n📊 ESTADÍÍSTICAS GLOBALES (todos los archivos):")
             print(f"   Tiempo de reacción promedio global: {valid_global['tiempo_reaccion_ms'].mean():.1f} ms")
             print(f"   Mediana global: {valid_global['tiempo_reaccion_ms'].median():.1f} ms")
             print(f"   Desviación estándar global: {valid_global['tiempo_reaccion_ms'].std():.1f} ms")
