@@ -6,16 +6,17 @@ import glob
 import sys
 
 # ========== CONFIGURACIÓN ==========
-NOMBRE = "Victor"
+# (Se mantendrán los valores del script original, el usuario puede cambiarlos si es necesario)
+NOMBRE = "Raul"
 EXP_NUM = 1  # 1 o 2
-INPUT_DIR = fr"C:\Users\Victor\Documents\Tesis3D\Analizar_Data\Resultados\Experimento_{EXP_NUM}\{NOMBRE}_data"
-OUTPUT_DIR = fr"C:\Users\Victor\Documents\Tesis3D\Analizar_Data\Resultados\Experimento_{EXP_NUM}\{NOMBRE}_data\analisis_reaccion"
+INPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data"
+OUTPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data/analisis_reaccion"
 
 
 # Parámetros de análisis
 VENTANA_BUSQUEDA_ADELANTE_MS = 1000.0  # Buscar fijación dentro de 1000ms DESPUÉS del estímulo
-VENTANA_BUSQUEDA_ATRAS_MS = 300.0      # Buscar fijación hasta 300ms ANTES del estímulo (para anticipaciones)
-OFFSET_MS = 500.0  # El mismo offset usado en el análisis original
+VENTANA_BUSQUEDA_ATRAS_MS = 1000.0      # Buscar fijación hasta 350ms ANTES del estímulo (para anticipaciones)
+OFFSET_MS = 0.0  # El mismo offset usado en el análisis original
 
 # Umbrales de clasificación
 UMBRAL_ANTICIPACION_MS = -50.0     # Menos de -50ms = anticipación clara
@@ -26,6 +27,7 @@ UMBRAL_REACCION_NORMAL_MS = 300.0  # 150-300ms = reacción normal
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # ========== FUNCIONES DE ESTÍMULOS ==========
+# (Sin cambios)
 def get_stimulus_events_exp1(offset_ms=0):
     """Define los 9 eventos de estímulo para el Experimento 1."""
     DURACION_PUNTO_MS = 2000.0
@@ -68,6 +70,7 @@ def get_stimulus_events_exp2(offset_ms=0):
     return eventos_estimulo
 
 # ========== ANÁLISIS DE TIEMPO DE REACCIÓN (CORREGIDO) ==========
+# (Sin cambios)
 def analizar_tiempo_reaccion(fijaciones_df, eventos_estimulo, ventana_adelante_ms=1000.0, ventana_atras_ms=300.0):
     """
     Calcula el tiempo de reacción y cuenta fijaciones por cada estímulo.
@@ -167,9 +170,15 @@ def analizar_tiempo_reaccion(fijaciones_df, eventos_estimulo, ventana_adelante_m
 
 
 # ========== VISUALIZACIONES ==========
+
+# === MODIFICADO (Request 2: Quitar subplot de fijaciones) ===
 def graficar_tiempos_reaccion(resultados_df, output_file):
-    """Gráfico de barras de tiempos de reacción por estímulo."""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
+    """
+    Gráfico de barras de tiempos de reacción por estímulo.
+    MODIFICADO: Se eliminó el subplot de número de fijaciones.
+    """
+    # Se cambia de 2 subplots a 1 y se ajusta el tamaño
+    fig, ax1 = plt.subplots(1, 1, figsize=(14, 7))
     
     # Subplot 1: Tiempo de reacción (ahora puede ser negativo)
     valid_data = resultados_df.dropna(subset=['tiempo_reaccion_ms'])
@@ -212,25 +221,14 @@ def graficar_tiempos_reaccion(resultados_df, output_file):
     ax1.set_xticks(valid_data['estimulo_num'])
     ax1.set_xticklabels(valid_data['estimulo_label'], rotation=45, ha='right', fontsize=9)
     
-    # Subplot 2: Número de fijaciones
-    ax2.bar(resultados_df['estimulo_num'], resultados_df['num_fijaciones'], 
-            color='steelblue', alpha=0.7, edgecolor='black')
-    ax2.axhline(y=1, color='green', linestyle='--', alpha=0.5, label='1 fijación (ideal)')
-    
-    ax2.set_xlabel('Número de Estímulo', fontsize=12)
-    ax2.set_ylabel('Número de Fijaciones', fontsize=12)
-    ax2.set_title('Cantidad de Fijaciones por Estímulo', fontsize=14, weight='bold')
-    ax2.legend()
-    ax2.grid(axis='y', alpha=0.3)
-    
-    ax2.set_xticks(resultados_df['estimulo_num'])
-    ax2.set_xticklabels(resultados_df['estimulo_label'], rotation=45, ha='right', fontsize=9)
+    # --- SE ELIMINÓ EL SUBPLOT 2 (ax2) ---
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=150)
     print(f"✓ Gráfico de tiempos de reacción guardado: {output_file}")
     plt.close(fig)
 
+# (Función sin cambios)
 def graficar_timeline_detallado(fijaciones_df, eventos_estimulo, resultados_df, output_file):
     """Timeline detallado mostrando estímulos, fijaciones y tiempos de reacción."""
     fig, ax = plt.subplots(figsize=(18, 8))
@@ -296,14 +294,25 @@ def graficar_timeline_detallado(fijaciones_df, eventos_estimulo, resultados_df, 
     print(f"✓ Timeline detallado guardado: {output_file}")
     plt.close(fig)
 
+# === MODIFICADO (Request 1: Arreglar gráfico comprimido) ===
 def graficar_distribucion_tiempos(resultados_df, output_file):
-    """Histograma y estadísticas de tiempos de reacción (incluyendo negativos)."""
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    """
+    Histograma y estadísticas de tiempos de reacción (incluyendo negativos).
+    MODIFICADO: Layout cambiado a 2x1 para evitar compresión y bins='auto'.
+    """
+    # Se cambia de 1x2 a 2x1 y se ajusta el tamaño
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8))
     
     valid_data = resultados_df.dropna(subset=['tiempo_reaccion_ms'])
     
+    if valid_data.empty:
+        print("⚠ Advertencia: No hay datos válidos para graficar la distribución de tiempos.")
+        plt.close(fig)
+        return
+
     # Histograma (ahora con rango que incluye negativos)
-    ax1.hist(valid_data['tiempo_reaccion_ms'], bins=20, color='skyblue', 
+    # Se cambian los bins a 'auto' para mejor ajuste
+    ax1.hist(valid_data['tiempo_reaccion_ms'], bins='auto', color='skyblue', 
              edgecolor='black', alpha=0.7)
     ax1.axvline(x=valid_data['tiempo_reaccion_ms'].mean(), color='red', 
                 linestyle='--', linewidth=2, label=f"Media: {valid_data['tiempo_reaccion_ms'].mean():.1f}ms")
@@ -318,16 +327,17 @@ def graficar_distribucion_tiempos(resultados_df, output_file):
     ax1.legend()
     ax1.grid(alpha=0.3)
     
-    # Box plot
-    ax2.boxplot(valid_data['tiempo_reaccion_ms'], vert=True, patch_artist=True,
+    # Box plot (ahora está debajo y en horizontal)
+    ax2.boxplot(valid_data['tiempo_reaccion_ms'], vert=False, patch_artist=True, # Cambiado a horizontal (vert=False)
                 boxprops=dict(facecolor='lightgreen', alpha=0.7),
                 medianprops=dict(color='red', linewidth=2))
-    ax2.axhline(y=0, color='black', linestyle='-', linewidth=1.5, alpha=0.7)
-    ax2.set_ylabel('Tiempo de Reacción (ms)\n[Negativo = Anticipación]', fontsize=12)
+    ax2.axvline(x=0, color='black', linestyle='-', linewidth=1.5, alpha=0.7)
+    ax2.set_xlabel('Tiempo de Reacción (ms)\n[Negativo = Anticipación]', fontsize=12)
     ax2.set_title('Estadísticas de Tiempos de Reacción', fontsize=13, weight='bold')
-    ax2.grid(axis='y', alpha=0.3)
+    ax2.grid(axis='x', alpha=0.3)
+    ax2.set_yticks([]) # Ocultar el tick de 'y'
     
-    # Añadir estadísticas como texto (incluyendo info de anticipaciones)
+    # Añadir estadísticas como texto
     num_anticipaciones = len(valid_data[valid_data['tiempo_reaccion_ms'] < 0])
     num_reacciones = len(valid_data[valid_data['tiempo_reaccion_ms'] >= 0])
     
@@ -340,8 +350,12 @@ def graficar_distribucion_tiempos(resultados_df, output_file):
     stats_text += f"Anticipaciones: {num_anticipaciones}\n"
     stats_text += f"Reacciones: {num_reacciones}"
     
-    ax2.text(1.3, valid_data['tiempo_reaccion_ms'].mean(), stats_text,
-             fontsize=10, bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    # Colocar el texto anclado al gráfico (funciona mejor con tight_layout)
+    # Se ajusta la posición y anclaje para el nuevo layout
+    ax2.text(0.95, 0.95, stats_text,
+             transform=ax2.transAxes, fontsize=10,
+             verticalalignment='top', horizontalalignment='right',
+             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
     
     plt.tight_layout()
     plt.savefig(output_file, dpi=150)
@@ -412,13 +426,13 @@ def main():
             
             # Generar gráficos
             output_barras = os.path.join(OUTPUT_DIR, f"{base_name}_tiempos_reaccion.png")
-            graficar_tiempos_reaccion(resultados_df, output_barras)
+            graficar_tiempos_reaccion(resultados_df, output_barras) # Función modificada
             
             output_timeline = os.path.join(OUTPUT_DIR, f"{base_name}_timeline_detallado.png")
             graficar_timeline_detallado(fijaciones_df, eventos_estimulo, resultados_df, output_timeline)
             
             output_dist = os.path.join(OUTPUT_DIR, f"{base_name}_distribucion_tiempos.png")
-            graficar_distribucion_tiempos(resultados_df, output_dist)
+            graficar_distribucion_tiempos(resultados_df, output_dist) # Función modificada
             
             # Mostrar estadísticas
             valid_rt = resultados_df.dropna(subset=['tiempo_reaccion_ms'])
@@ -470,11 +484,59 @@ def main():
         # Estadísticas globales
         valid_global = df_consolidado.dropna(subset=['tiempo_reaccion_ms'])
         if not valid_global.empty:
-            print(f"\n📊 ESTADÍÍSTICAS GLOBALES (todos los archivos):")
+            print(f"\n📊 ESTADÍSTICAS GLOBALES (todos los archivos):")
             print(f"   Tiempo de reacción promedio global: {valid_global['tiempo_reaccion_ms'].mean():.1f} ms")
             print(f"   Mediana global: {valid_global['tiempo_reaccion_ms'].median():.1f} ms")
             print(f"   Desviación estándar global: {valid_global['tiempo_reaccion_ms'].std():.1f} ms")
             print(f"   Total de respuestas analizadas: {len(valid_global)}")
+
+            # === NUEVO (Request 3 y 4): Generar CSV de resumen de métricas ===
+            print("\nGenerando reporte resumen de métricas...")
+            try:
+                resumen_metricas = {}
+                reacciones = valid_global[valid_global['tiempo_reaccion_ms'] >= 0]
+                anticipaciones = valid_global[valid_global['tiempo_reaccion_ms'] < 0]
+
+                # Métricas solicitadas
+                resumen_metricas['tiempo_reaccion_promedio_positivo_ms'] = reacciones['tiempo_reaccion_ms'].mean() if len(reacciones) > 0 else np.nan
+                resumen_metricas['tiempo_anticipacion_promedio_ms'] = anticipaciones['tiempo_reaccion_ms'].mean() if len(anticipaciones) > 0 else np.nan
+
+                # Otras métricas generales
+                resumen_metricas['tiempo_reaccion_promedio_total_ms'] = valid_global['tiempo_reaccion_ms'].mean()
+                resumen_metricas['tiempo_reaccion_mediana_total_ms'] = valid_global['tiempo_reaccion_ms'].median()
+                resumen_metricas['tiempo_reaccion_std_total_ms'] = valid_global['tiempo_reaccion_ms'].std()
+                resumen_metricas['tiempo_reaccion_min_ms'] = valid_global['tiempo_reaccion_ms'].min()
+                resumen_metricas['tiempo_reaccion_max_ms'] = valid_global['tiempo_reaccion_ms'].max()
+                
+                resumen_metricas['conteo_total_respuestas'] = len(valid_global)
+                resumen_metricas['conteo_reacciones_positivas'] = len(reacciones)
+                resumen_metricas['conteo_anticipaciones'] = len(anticipaciones)
+                resumen_metricas['tasa_anticipacion_pct'] = (len(anticipaciones) / len(valid_global)) * 100 if len(valid_global) > 0 else 0
+                
+                # Métricas de duración de fijación
+                resumen_metricas['duracion_promedio_primera_fijacion_total_ms'] = valid_global['duracion_primera_fijacion_ms'].mean()
+                resumen_metricas['duracion_promedio_primera_fijacion_reaccion_ms'] = reacciones['duracion_primera_fijacion_ms'].mean() if len(reacciones) > 0 else np.nan
+                resumen_metricas['duracion_promedio_primera_fijacion_anticipacion_ms'] = anticipaciones['duracion_primera_fijacion_ms'].mean() if len(anticipaciones) > 0 else np.nan
+                resumen_metricas['duracion_promedio_fijaciones_por_estimulo_ms'] = valid_global['duracion_promedio_fijaciones_ms'].mean()
+                resumen_metricas['numero_promedio_fijaciones_por_estimulo'] = valid_global['num_fijaciones'].mean()
+                
+                # Conteo de estados
+                conteo_estados = valid_global['estado'].value_counts().to_dict()
+                for k, v in conteo_estados.items():
+                    resumen_metricas[f'conteo_estado_{k}'] = v
+
+                # Convertir a DataFrame y guardar
+                df_resumen = pd.DataFrame(resumen_metricas.items(), columns=['Metrica', 'Valor'])
+                output_resumen_csv = os.path.join(OUTPUT_DIR, "reporte_resumen_metricas.csv")
+                
+                df_resumen['Valor'] = df_resumen['Valor'].round(2) # Redondear valores
+                
+                df_resumen.to_csv(output_resumen_csv, index=False)
+                print(f"✓ Reporte de resumen de métricas guardado: {output_resumen_csv}")
+
+            except Exception as e:
+                print(f"  ✗ ERROR generando el reporte de resumen de métricas: {e}")
+            # === FIN DE LA MODIFICACIÓN ===
     
     print(f"\n{'='*60}")
     print("✓ ANÁLISIS COMPLETADO")

@@ -1,0 +1,10 @@
+estimulo_num,estimulo_label,stim_start_ms,stim_end_ms,tiempo_reaccion_ms,num_fijaciones,duracion_primera_fijacion_ms,duracion_promedio_fijaciones_ms,estado,archivo
+1,P1 (Sup-Izq),500.0,2500.0,533.3330000000001,2,1200.0,866.6665,reacción_lenta,Venegas_intento_5_data
+2,P2 (Sup-Cen),2500.0,4500.0,-100.0,3,533.3330000000001,811.111,anticipación,Venegas_intento_5_data
+3,P3 (Sup-Der),4500.0,6500.0,-33.33299999999963,1,1400.0,1400.0,anticipación_leve,Venegas_intento_5_data
+4,P4 (Med-Izq),6500.0,8500.0,400.0,2,1100.0,883.3334999999997,reacción_lenta,Venegas_intento_5_data
+5,P5 (Med-Cen),8500.0,10500.0,-66.66699999999946,2,666.6669999999995,483.33349999999973,anticipación,Venegas_intento_5_data
+6,P6 (Med-Der),10500.0,12500.0,100.0,1,1000.0,1000.0,reacción_rápida,Venegas_intento_5_data
+7,P7 (Inf-Izq),12500.0,14500.0,,1,,933.3330000000004,sin_respuesta,Venegas_intento_5_data
+8,P8 (Inf-Cen),14500.0,16500.0,933.3330000000005,3,266.66699999999946,544.4443333333335,reacción_lenta,Venegas_intento_5_data
+9,P9 (Inf-Der),16500.0,18500.0,200.0,2,500.0,466.66650000000027,reacción_normal,Venegas_intento_5_data

@@ -10,7 +10,7 @@ import csv
 FIXED_THRESHOLD_VALUE = 30   # Umbral fijo
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0       # Límite de clip
-MIN_PUPIL_AREA = 1000 # Área mínima
+MIN_PUPIL_AREA = 700 # Área mínima
 MAX_PUPIL_AREA = 8500        # Área máxima
 MORPH_KERNEL_SIZE = 5        # Tamaño kernel morfología
 # ------------------------------------------
@@ -29,23 +29,33 @@ HORIZONTALITY_TOLERANCE = 1.35
 # -----------------------------------------------
 
 # --- PARÁMETROS DE ESTABILIDAD TEMPORAL (FILTRO DE PARPADEO) ---
-MAX_PUPIL_JUMP_DISTANCE = 40 # (Píxeles) Distancia máxima
-MAX_LOST_TRACK_FRAMES = 10   # (Frames) N. de frames para resetear
+MAX_PUPIL_JUMP_DISTANCE = 200 # (Píxeles) Distancia máxima
+MAX_LOST_TRACK_FRAMES = 6   # (Frames) N. de frames para resetear
 # -------------------------------------------------------------------------
 
 # --- <<<--- NUEVA CONSTANTE DEL MUNDO REAL ---
 IRIS_DIAMETER_MM = 11.7 # Diámetro promedio del iris humano en mm
 # --- <<<--- ---
 
-# --- <<<--- PARÁMETROS DEL IRIS (DE DEBUG_IRIS.PY) ---
-IRIS_MAX_SEARCH_SCALE_FACTOR = 4.0 
-IRIS_RADIAL_RAYS = 380
-IRIS_GRADIENT_THRESHOLD = 0
-PUPIL_RADIUS_BUFFER_RATIO = 1.4
-IRIS_SPECULAR_LOOKAHEAD_PIXELS = 25
-SPECULAR_GRADIENT_RATIO = -0.6 
-ROBUST_FILTER_THRESHOLD = 1.2
-IRIS_SMOOTHING_ALPHA = 0.7
+# --- <<<--- PARÁMETROS DEL IRIS (ACTUALIZADOS DESDE DEBUG_IRIS.PY) ---
+IRIS_MAX_SEARCH_SCALE_FACTOR = 5
+IRIS_RADIAL_RAYS = 400
+POSITIVE_GRADIENT_THRESHOLD = 5 # Umbral para 'puntos verdes'
+NEGATIVE_GRADIENT_THRESHOLD = -35 # Umbral para 'puntos rojos'
+PUPIL_RADIUS_BUFFER_RATIO = 1.6 # Buffer que nos diste
+# --- <<<--- ---
+
+# --- <<<--- PARÁMETROS DE FILTRO DE REFLEJOS (ELIMINADOS) ---
+# (Ya no se usan)
+# --- <<<--- ---
+
+# --- <<<--- PARÁMETRO DE FILTRO ROBUSTO (PERCENTIL) ---
+ROBUST_FILTER_THRESHOLD = 1
+IRIS_FILTER_PERCENTILE = 40 
+# --- <<<--- ---
+
+# --- <<<--- PARÁMETRO DE SUAVIZADO ---
+IRIS_SMOOTHING_ALPHA = 0.3 
 # --- <<<--- ---
 
 
@@ -196,18 +206,16 @@ def process_frames(frame, gray_frame_clahe):
             stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=2)
             center_x, center_y = stable_pupil_center if stable_pupil_center else (center_x_raw, center_y_raw)
             
-            # --- <<<--- INICIO: LÓGICA DE DETECCIÓN DE IRIS (DE DEBUG_IRIS.PY) ---
+            # --- <<<--- INICIO: LÓGICA DE DETECCIÓN DE IRIS (ACTUALIZADA) ---
             iris_edge_points = []
             
             (cx_f, cy_f), (pupil_w_axis, pupil_h_axis), angle = final_rotated_rect
             cx, cy = int(cx_f), int(cy_f)
-            pupil_diameter = max(pupil_w_axis, pupil_h_axis) # Usamos el diámetro MÁXIMO de la pupila
+            pupil_diameter = max(pupil_w_axis, pupil_h_axis)
             pupil_radius = pupil_diameter / 2.0
             
             min_search_radius = int(pupil_radius * PUPIL_RADIUS_BUFFER_RATIO)
             max_search_radius = int(pupil_radius * IRIS_MAX_SEARCH_SCALE_FACTOR)
-            
-            # (No dibujamos los círculos de búsqueda verde/naranja en el script final)
             
             # --- Lanzar Rayos ---
             for i in range(IRIS_RADIAL_RAYS):
@@ -215,7 +223,7 @@ def process_frames(frame, gray_frame_clahe):
                 cos_a = np.cos(current_angle)
                 sin_a = np.sin(current_angle)
                 
-                candidate_gradients = []
+                candidate_positive_gradients = []
                 
                 x_prev = int(cx + min_search_radius * cos_a)
                 y_prev = int(cy + min_search_radius * sin_a)
@@ -233,56 +241,39 @@ def process_frames(frame, gray_frame_clahe):
                     curr_intensity = int(gray_frame_clahe[y_curr, x_curr])
                     gradient = curr_intensity - prev_intensity
                     
-                    if gradient > IRIS_GRADIENT_THRESHOLD:
-                        candidate_gradients.append( (gradient, x_curr, y_curr, r) )
+                    if gradient > POSITIVE_GRADIENT_THRESHOLD:
+                        candidate_positive_gradients.append( (gradient, x_curr, y_curr, r) )
                         
                     prev_intensity = curr_intensity
                 
-                # --- Validar candidatos ---
-                if not candidate_gradients: continue
-                
-                validated_candidates = []
-                for candidate in candidate_gradients:
-                    grad_val, x_c, y_c, r_c = candidate
-                    is_reflection = False
-                    try:
-                        intensity_at_peak = int(gray_frame_clahe[y_c, x_c])
-                    except IndexError: continue 
+                # --- FILTRO DE REFLEJOS (DESACTIVADO) ---
+                # --- SELECCIÓN DEL MÁS CERCANO (para este rayo) ---
+                if candidate_positive_gradients:
+                    # Ordenamos por radio (r), de MENOR a mayor
+                    candidate_positive_gradients.sort(key=lambda x: x[3], reverse=False)
                     
-                    for r_ahead in range(1, IRIS_SPECULAR_LOOKAHEAD_PIXELS + 1):
-                        x_ahead = int(cx + (r_c + r_ahead) * cos_a)
-                        y_ahead = int(cy + (r_c + r_ahead) * sin_a)
-                        
-                        if not (0 <= x_ahead < w_frame and 0 <= y_ahead < h_frame): break
-                        
-                        intensity_after = int(gray_frame_clahe[y_ahead, x_ahead])
-                        negative_gradient = intensity_after - intensity_at_peak
-                        
-                        if negative_gradient < (IRIS_GRADIENT_THRESHOLD * SPECULAR_GRADIENT_RATIO):
-                            is_reflection = True
-                            break
-                    
-                    if not is_reflection:
-                        validated_candidates.append( ((x_c, y_c), r_c) )
-                
-                # --- Seleccionar el punto VÁLIDO con el MENOR RADIO ---
-                if validated_candidates:
-                    validated_candidates.sort(key=lambda x: x[1], reverse=False)
-                    best_point = validated_candidates[0][0] 
+                    # Quedarse con el punto (x, y) del candidato con menor radio
+                    best_point = (candidate_positive_gradients[0][1], candidate_positive_gradients[0][2])
                     iris_edge_points.append(best_point)
 
-            # --- FILTRAR PUNTOS Y AJUSTAR ELIPSE ---
+            # --- FILTRO ROBUSTO (PERCENTIL) Y AJUSTE DE ELIPSE ---
             if len(iris_edge_points) >= 10:
                 points_np = np.array(iris_edge_points)
                 center_np = np.array([cx, cy])
                 radii = np.linalg.norm(points_np - center_np, axis=1)
                 
-                median_radius = np.median(radii)
-                mad = np.median(np.abs(radii - median_radius)) * 1.4826 
+                # Anclamos al percentil bajo para priorizar puntos cercanos
+                anchor_radius = np.percentile(radii, IRIS_FILTER_PERCENTILE)
+                
+                # Usamos la mediana para una medida robusta de la dispersión
+                median_radius_for_mad = np.median(radii)
+                mad = np.median(np.abs(radii - median_radius_for_mad)) * 1.4826 
                 
                 if mad == 0: mad = 1.0 
                 
-                z_score_robusta = np.abs(radii - median_radius) / mad 
+                # Calculamos el Z-score basándonos en nuestra "ancla"
+                z_score_robusta = np.abs(radii - anchor_radius) / mad 
+                
                 inlier_indices = np.where(z_score_robusta < ROBUST_FILTER_THRESHOLD)
                 cleaned_points_np = points_np[inlier_indices]
 
@@ -323,8 +314,7 @@ def process_frames(frame, gray_frame_clahe):
 
                     except cv2.error:
                         pass # Falló el ajuste, no hacer nada
-
-            # --- <<<--- FIN: LÓGICA DE DETECCIÓN DE IRIS ---
+            # --- <<<--- FIN: LÓGICA DE DETECCIÓN DE IRIS (ACTUALIZADA) ---
             
             # --- FILTRO 3: TEMPORAL (PARPADEO/SALTO) ---
             new_pupil_center = (center_x, center_y)
@@ -556,7 +546,7 @@ def process_video_from_path(video_path, video_name, csv_path,prev):
                 ret, frame = cap.read()
                 if not ret: break
                 frame_counter += 1
-                timestamp_ms = (frame_counter / fps) * 1000.0
+                timestamp_ms = (frame_counter / fps) * 100.0
                 data = process_frame(frame)
                 if data.get("valid_deteccion") and data.get("contour_area") is not None:
                     current_area = data["contour_area"]

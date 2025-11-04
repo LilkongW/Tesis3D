@@ -1,0 +1,10 @@
+estimulo_num,estimulo_label,stim_start_ms,stim_end_ms,tiempo_reaccion_ms,num_fijaciones,duracion_primera_fijacion_ms,duracion_promedio_fijaciones_ms,estado,archivo
+1,P1 (Sup-Izq),0.0,2000.0,33.333,3,366.667,522.2223333333333,reacción_rápida,Raul_intento_10_data
+2,P2 (Sup-Cen),2000.0,4000.0,466.6669999999999,2,1833.333,1300.0,reacción_lenta,Raul_intento_10_data
+3,P3 (Sup-Der),4000.0,6000.0,900.0,3,500.0,866.6666666666669,reacción_lenta,Raul_intento_10_data
+4,P4 (Med-Izq),6000.0,8000.0,-166.66700000000037,2,266.6670000000004,1033.3334999999997,anticipación,Raul_intento_10_data
+5,P5 (Med-Cen),8000.0,10000.0,433.33300000000054,2,1800.0,1799.9999999999995,reacción_lenta,Raul_intento_10_data
+6,P6 (Med-Der),10000.0,12000.0,533.3330000000005,2,1666.6669999999997,1733.3334999999997,reacción_lenta,Raul_intento_10_data
+7,P7 (Inf-Izq),12000.0,14000.0,400.0,2,1566.6669999999997,1616.6669999999997,reacción_lenta,Raul_intento_10_data
+8,P8 (Inf-Cen),14000.0,16000.0,366.66699999999946,1,1366.666000000001,1366.666000000001,reacción_lenta,Raul_intento_10_data
+9,P9 (Inf-Der),16000.0,18000.0,266.66699999999946,1,1600.0000000000018,1600.0000000000018,reacción_normal,Raul_intento_10_data

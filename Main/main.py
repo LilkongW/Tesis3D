@@ -6,11 +6,11 @@ from utils.eye_tracker_utils import process_video_from_path
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (220, 240) # (ancho,alto)
+    prev = (260, 240) # (ancho,alto)
 
     EXP_NUM = 3
 
-    NOMBRE= "Victor"
+    NOMBRE= "Raul"
 
     # Carpeta que contiene los videos a procesar
     VIDEO_FOLDER_PATH = rf"Videos/Experimento_{EXP_NUM}/{NOMBRE}"  # <-- RUTA DE VIDEOS

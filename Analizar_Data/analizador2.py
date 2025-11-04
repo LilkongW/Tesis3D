@@ -7,9 +7,9 @@ import os
 import glob 
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
-NOMBRE = "Josuep"
+NOMBRE = "Raul"
 # Directorio de ENTRADA
-EXP_NUM = 2 # <--- ESTA VARIABLE AHORA CONTROLA LOS ESTÍMULOS
+EXP_NUM = 1 # <--- ESTA VARIABLE AHORA CONTROLA LOS ESTÍMULOS
 INPUT_DIR = fr"Data/Experimento_{EXP_NUM}/{NOMBRE}_data"
 # Directorio de SALIDA
 OUTPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data"
@@ -20,7 +20,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # --- NUEVA CONFIGURACIÓN: Offset de Sincronización ---
 # Ignorar los primeros N milisegundos de los datos del ojo
-OFFSET_MS = 500.0
+OFFSET_MS = 0
 
 # --- Umbrales de Detección ---
 UMBRALES_3D = {
