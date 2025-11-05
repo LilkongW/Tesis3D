@@ -7,35 +7,20 @@ import time
 import csv
 
 # --- PARÁMETROS DE FILTRADO Y PREPROCESAMIENTO ---
-FIXED_THRESHOLD_VALUE = 7     # Umbral fijo
+FIXED_THRESHOLD_VALUE = 50    # Umbral fijo (BAJADO SEGÚN TU SCRIPT DE DEBUG)
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0         # Límite de clip
-MIN_PUPIL_AREA = 200           # Área mínima (Actualizado)
-MAX_PUPIL_AREA = 6000          # Área máxima (Actualizado)
 MORPH_KERNEL_SIZE = 5          # Tamaño kernel morfología
+# ------------------------------------------
+# --- FILTROS DE ÁREA, FIT, BBOX, Y FALLBACK ELIMINADOS ---
 # ------------------------------------------
 
 # --- PARÁMETRO DE ESTABILIDAD DEL MODELO ---
 MAX_INTERSECTION_DISTANCE = 30 
 # ------------------------------------------
 
-# --- FILTRO DE AJUSTE DE PUPILA ---
-MIN_ELLIPTICAL_FIT_RATIO = 0.85 
-MAX_ELLIPTICAL_FIT_RATIO = 1.20
-# ----------------------------------------------------
-
-# --- FILTRO DE BBOX DE PUPILA ---
-HORIZONTALITY_TOLERANCE = 1.4 # (Actualizado)
-# -----------------------------------------------
-
-# --- ¡NUEVOS! PARÁMETROS DE FALLBACK "AS BAJO LA MANGA" ---
-FALLBACK_THRESHOLD = 63      # Umbral para el método fallback (Tu valor)
-FALLBACK_AVG_KERNEL_SIZE = 3 # Tamaño del bloque 3x3 para buscar oscuridad
-FALLBACK_MIN_AREA = 700       # Área mínima para contornos fallback (para evitar ruido)
-# ----------------------------------------------------
-
 # --- PARÁMETROS DE ESTABILIDAD TEMPORAL (FILTRO DE PARPADEO) ---
-MAX_PUPIL_JUMP_DISTANCE = 100 # (Píxeles) Distancia máxima
+MAX_PUPIL_JUMP_DISTANCE = 120 # (Píxeles) Distancia máxima
 MAX_LOST_TRACK_FRAMES = 6    # (Frames) N. de frames para resetear
 # -------------------------------------------------------------------------
 
@@ -124,107 +109,17 @@ def optimize_contours_by_angle(contours):
     return np.array(filtered_points, dtype=np.int32).reshape((-1, 1, 2))
 
 
-# --- FUNCIÓN DE FALLBACK (MODIFICADA) ---
-def find_fallback_pupil(gray_frame_clahe, morph_kernel, h_frame, w_frame):
-    """
-    Método "As bajo la manga": Busca el contorno que contenga el
-    bloque NxN más oscuro, usando un umbral más alto, PERO que
-    ADEMÁS cumpla los filtros de forma.
-    """
-    
-    # 1. Aplicar nuevo umbral y morfología
-    fallback_thresholded_image = apply_fixed_binary_threshold(gray_frame_clahe, FALLBACK_THRESHOLD)
-    fallback_closed = cv2.morphologyEx(fallback_thresholded_image, cv2.MORPH_CLOSE, morph_kernel, iterations=1)
-    fallback_final = cv2.morphologyEx(fallback_closed, cv2.MORPH_OPEN, morph_kernel, iterations=1)
-
-    # 2. Encontrar contornos
-    fallback_contours, _ = cv2.findContours(fallback_final.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-    min_avg_intensity = float('inf')
-    best_fallback_contour = None
-    
-    k_size = FALLBACK_AVG_KERNEL_SIZE
-    k_half = k_size // 2
-    if k_half < 1: k_half = 1 # Asegurar al menos 1 (para 3x3, k_half=1)
-
-    # 3. Encontrar el contorno VÁLIDO con el centroide más oscuro
-    for contour in fallback_contours:
-        
-        # --- <<<--- INICIO: FILTROS DE FALLBACK ---
-        
-        # Filtro 1: Área (usamos el mínimo de fallback y el máximo global)
-        contour_area = cv2.contourArea(contour)
-        if not (FALLBACK_MIN_AREA <= contour_area <= MAX_PUPIL_AREA):
-            continue
-            
-        # Filtro 2: Horizontalidad
-        x_bbox, y_bbox, w_bbox, h_bbox = cv2.boundingRect(contour)
-        if h_bbox == 0: continue 
-        if w_bbox > (h_bbox * HORIZONTALITY_TOLERANCE):
-            continue
-            
-        # Filtro 3: Ajuste Elíptico
-        if len(contour) < 5:
-            continue
-            
-        try:
-            fitted_ellipse = cv2.fitEllipse(contour)
-            (width, height) = fitted_ellipse[1]
-            if width <= 0 or height <= 0: continue
-            ellipse_area = (np.pi / 4.0) * width * height
-            if ellipse_area <= 0: continue
-            
-            fit_ratio = contour_area / ellipse_area
-
-            # Si NO es un buen fit, descartar
-            if not (MIN_ELLIPTICAL_FIT_RATIO < fit_ratio <= MAX_ELLIPTICAL_FIT_RATIO):
-                continue 
-                
-        except cv2.error:
-            continue
-        
-        # --- <<<--- FIN: FILTROS DE FALLBACK ---
-        
-        # --- Si pasó los filtros, comprobar oscuridad ---
-        M = cv2.moments(contour)
-        if M["m00"] == 0:
-            continue
-        
-        # Centroide del contorno
-        cX = int(M["m10"] / M["m00"])
-        cY = int(M["m01"] / M["m00"])
-        
-        # Obtener el bloque NxN alrededor del centroide
-        x_start = max(0, cX - k_half)
-        y_start = max(0, cY - k_half)
-        x_end = min(w_frame, cX + k_half + 1)
-        y_end = min(h_frame, cY + k_half + 1)
-        
-        block = gray_frame_clahe[y_start:y_end, x_start:x_end]
-        
-        if block.size == 0:
-            continue
-            
-        # Calcular intensidad media
-        avg_intensity = np.mean(block)
-        
-        # 4. Actualizar el mejor contorno (más oscuro Y válido)
-        if avg_intensity < min_avg_intensity:
-            min_avg_intensity = avg_intensity
-            best_fallback_contour = contour
-            
-    # 5. Devolver el contorno encontrado (o None)
-    return best_fallback_contour
-# --- FIN DE LA FUNCIÓN DE FALLBACK ---
+# --- FUNCIÓN DE FALLBACK (ELIMINADA) ---
+# ... (find_fallback_pupil eliminada) ...
 
 
-# --- FUNCIÓN process_frames (LÓGICA DE DETECCIÓN MODIFICADA) ---
+# --- FUNCIÓN process_frames (LÓGICA DE DETECCIÓN REESCRITA) ---
 def process_frames(frame, gray_frame_clahe):
     global ray_lines, max_rays, prev_model_center_avg, max_observed_distance, stable_pupil_centers, model_centers
     global last_known_pupil_center, frames_since_last_good_detection
-    global smoothed_iris_ellipse # <-- ¡NUEVA VARIABLE GLOBAL!
+    global smoothed_iris_ellipse 
 
-    # --- data_dict actualizado (sin campos de 'mm') ---
+    # --- data_dict actualizado ---
     data_dict = {
         "valid_deteccion": False, "sphere_center_x": None, "sphere_center_y": None, "sphere_center_z": None,
         "pupil_center_x": None, "pupil_center_y": None,
@@ -235,65 +130,37 @@ def process_frames(frame, gray_frame_clahe):
     
     h_frame, w_frame = frame.shape[:2] # Para los límites de los rayos
 
-    # 1. Binarización y Morfología
+    # --- INICIO: NUEVA LÓGICA DE DETECCIÓN (MÉTODO ÚNICO) ---
+    
+    # 1. Encontrar el centro del bloque 5x5 más oscuro ("Semilla")
+    avg_intensity_map = cv2.blur(gray_frame_clahe, (5, 5))
+    minVal, maxVal, minLoc, maxLoc = cv2.minMaxLoc(avg_intensity_map)
+    darkest_center_point = minLoc
+
+    # 2. Binarización y Morfología
     morph_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (MORPH_KERNEL_SIZE, MORPH_KERNEL_SIZE))
     thresholded_image_raw = apply_fixed_binary_threshold(gray_frame_clahe, FIXED_THRESHOLD_VALUE)
     thresholded_image_closed = cv2.morphologyEx(thresholded_image_raw, cv2.MORPH_CLOSE, morph_kernel, iterations=1)
     thresholded_image_final = cv2.morphologyEx(thresholded_image_closed, cv2.MORPH_OPEN, morph_kernel, iterations=1)
 
-    # 2. Encontrar Contornos
+    # 3. Encontrar Contornos
     contours, _ = cv2.findContours(thresholded_image_final.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    # 3. Pre-filtrar por Área
-    contours_in_area_range = []
-    for contour in contours:
-        contour_area = cv2.contourArea(contour)
-        if MIN_PUPIL_AREA <= contour_area <= MAX_PUPIL_AREA:
-            contours_in_area_range.append(contour)
-
-    # 4. Encontrar el Mejor Contorno (Mejor Fit Elíptico)
+    # 4. Encontrar el contorno que contenga la "Semilla"
     best_pupil_contour = None
-    best_fit_score = float('inf') 
     best_contour_area = 0.0
 
-    for contour in contours_in_area_range:
-        x_bbox, y_bbox, w_bbox, h_bbox = cv2.boundingRect(contour)
-        if h_bbox == 0: continue 
-        if w_bbox > (h_bbox * HORIZONTALITY_TOLERANCE):
-            continue
-        if len(contour) < 5:
-            continue
-            
-        try:
-            fitted_ellipse = cv2.fitEllipse(contour)
-            (width, height) = fitted_ellipse[1]
-            if width <= 0 or height <= 0: continue
-            ellipse_area = (np.pi / 4.0) * width * height
-            if ellipse_area <= 0: continue
-            contour_area = cv2.contourArea(contour)
-            fit_ratio = contour_area / ellipse_area
-
-            if MIN_ELLIPTICAL_FIT_RATIO < fit_ratio <= MAX_ELLIPTICAL_FIT_RATIO:
-                current_fit_score = abs(fit_ratio - 1.0) 
-                if current_fit_score < best_fit_score:
-                    best_fit_score = current_fit_score
-                    best_pupil_contour = contour
-                    best_contour_area = contour_area 
-        except cv2.error:
-            continue
+    if darkest_center_point:
+        for contour in contours:
+            # Comprobar si la "semilla" (punto más oscuro) está DENTRO de este contorno
+            if cv2.pointPolygonTest(contour, darkest_center_point, False) >= 0:
+                best_pupil_contour = contour
+                best_contour_area = cv2.contourArea(best_pupil_contour)
+                break # Encontramos nuestro contorno, salimos del bucle
     
-    # --- <<<--- INICIO: LÓGICA DE FALLBACK "AS BAJO LA MANGA" ---
-    if best_pupil_contour is None:
-        # El método principal falló, intentar el fallback (que AHORA tiene filtros)
-        best_pupil_contour = find_fallback_pupil(gray_frame_clahe, morph_kernel, h_frame, w_frame)
-        
-        if best_pupil_contour is not None:
-            # Si el fallback tuvo éxito, calcular su área
-            best_contour_area = cv2.contourArea(best_pupil_contour)
-            # Opcional: print("¡Fallback activado!")
-    # --- <<<--- FIN: LÓGICA DE FALLBACK ---
+    # --- FIN: NUEVA LÓGICA DE DETECCIÓN ---
 
-    # 5. Procesar si se encontró un contorno válido (original O fallback)
+    # 5. Procesar si se encontró un contorno válido
     final_rotated_rect = None # Esta es nuestra elipse de pupila
     center_x, center_y = None, None
     is_detection_temporally_stable = False 
@@ -316,7 +183,7 @@ def process_frames(frame, gray_frame_clahe):
             stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=2)
             center_x, center_y = stable_pupil_center if stable_pupil_center else (center_x_raw, center_y_raw)
             
-            # --- <<<--- INICIO: LÓGICA DE DETECCIÓN DE IRIS (ACTUALIZADA) ---
+            # --- <<<--- INICIO: LÓGICA DE DETECCIÓN DE IRIS (SIN CAMBIOS) ---
             
             iris_edge_points = []
             cleaned_points = [] 
@@ -459,32 +326,20 @@ def process_frames(frame, gray_frame_clahe):
                     except cv2.error as e:
                         current_fitted_ellipse = None
                 
-                # --- <<<--- INICIO: CAMBIO ---
                 # --- ETAPA 5: SUAVIZADO (EMA) Y FORZADO CONCÉNTRICO ---
                 if current_fitted_ellipse is not None:
-                    
-                    # El centro de la elipse del iris (magenta) AHORA es
-                    # forzado a ser el centro de la elipse de la pupila (amarilla).
                     pupil_center = final_rotated_rect[0] 
-                    
-                    if smoothed_iris_ellipse[1][0] == 0.0: # Si es la primera vez
-                        # Usar el centro de la pupila, pero los ejes/ángulo del iris
+                    if smoothed_iris_ellipse[1][0] == 0.0: 
                         smoothed_iris_ellipse = (pupil_center, current_fitted_ellipse[1], current_fitted_ellipse[2])
                     else:
                         alpha = IRIS_SMOOTHING_ALPHA
-                        
-                        # NO suavizar el centro. Forzarlo.
                         scx, scy = pupil_center
-                        
-                        # SÍ suavizar los ejes y el ángulo del IRIS
                         sax = (current_fitted_ellipse[1][0] * alpha) + (smoothed_iris_ellipse[1][0] * (1.0 - alpha))
                         say = (current_fitted_ellipse[1][1] * alpha) + (smoothed_iris_ellipse[1][1] * (1.0 - alpha))
                         sang = (current_fitted_ellipse[2] * alpha) + (smoothed_iris_ellipse[2] * (1.0 - alpha))
-                        
                         smoothed_iris_ellipse = ((scx, scy), (sax, say), sang)
-                # --- <<<--- FIN: CAMBIO ---
             
-            # --- <<<--- FIN: LÓGICA DE DETECCIÓN DE IRIS (ACTUALIZADA) ---
+            # --- <<<--- FIN: LÓGICA DE DETECCIÓN DE IRIS ---
             
             # --- FILTRO 3: TEMPORAL (PARPADEO/SALTO) ---
             new_pupil_center = (center_x, center_y)
@@ -511,7 +366,7 @@ def process_frames(frame, gray_frame_clahe):
                     frames_since_last_good_detection = 0
     
     else:
-        # Esto se ejecuta si NI el método principal NI el fallback encontraron un contorno
+        # Esto se ejecuta si el método de semilla NO encontró un contorno
         frames_since_last_good_detection += 1
         smoothed_iris_ellipse = ((0,0),(0,0),0) # Resetear el iris si se pierde la pupila
 
@@ -658,10 +513,12 @@ def compute_gaze_vector(x_pupil, y_pupil, x_sphere, y_sphere, max_radius_pixels,
          fallback_center = np.array([0.0, 0.0, 0.0]); fallback_gaze = np.array([0.0, 0.0, -1.0])
          return fallback_center, fallback_gaze
 
-# --- FUNCIÓN DE PROCESAMIENTO PRINCIPAL (SIN CAMBIOS) ---
+# --- FUNCIÓN DE PROCESAMIENTO PRINCIPAL (CORREGIDA) ---
 def process_frame(frame):
     frame = crop_to_aspect_ratio(frame)
+    # --- <<<--- ¡LÍNEA CORREGIDA! ---
     gray_frame_original = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # --- <<<--- ---
     gray_frame_blurred = cv2.GaussianBlur(gray_frame_original, GAUSSIAN_KERNEL_SIZE, 0)
     clahe = cv2.createCLAHE(clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=(8, 8))
     gray_frame_clahe = clahe.apply(gray_frame_blurred)
@@ -718,6 +575,8 @@ def process_video_from_path(video_path, video_name, csv_path,prev):
                 frame_counter += 1
                 timestamp_ms = (frame_counter / fps) * 100.0
                 data = process_frame(frame)
+                
+                # --- Lógica de seguimiento de área (AHORA OCURRE DESPUÉS) ---
                 if data.get("valid_deteccion") and data.get("contour_area") is not None:
                     current_area = data["contour_area"]
                     min_area_found = min(min_area_found, current_area)

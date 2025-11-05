@@ -45,7 +45,7 @@ IRIS_SMOOTHING_ALPHA = 0.33 # Alpha para EMA (Equivalente a 5 frames: 2 / (5 + 1
 # --- <<<--- ---
 
 # ATENCIÓN: Ruta actualizada a tu versión de Windows
-VIDEO_PATH = r"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_3\Raul\Raul_intento_3_ROI_640x480.mp4" 
+VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/Arteaga/Arteaga_intento_1.mp4" 
 
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 def crop_to_aspect_ratio(image, width=640, height=480):
