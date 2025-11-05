@@ -2,21 +2,22 @@ import os
 import csv  # <-- Importar CSV
 # Importamos la única función que necesitamos desde nuestro módulo de utilidades
 from utils.eye_tracker_utils import process_video_from_path
+import os
 
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (260, 240) # (ancho,alto)
+    prev = (270, 260) # (ancho,alto)
 
-    EXP_NUM = 3
+    EXP_NUM = 1
 
     NOMBRE= "Raul"
 
-    # Carpeta que contiene los videos a procesar
-    VIDEO_FOLDER_PATH = rf"Videos/Experimento_{EXP_NUM}/{NOMBRE}"  # <-- RUTA DE VIDEOS
-    
+    # Ruta de videos - compatible con Windows y Linux
+    VIDEO_FOLDER_PATH = os.path.join("Videos", f"Experimento_{EXP_NUM}", NOMBRE)
+        
     # Carpeta donde se guardarán los archivos CSV generados
-    CSV_OUTPUT_PATH = rf"Data/Experimento_{EXP_NUM}/{NOMBRE}_data"  # <-- RUTA DE SALIDA DE CSV
+    CSV_OUTPUT_PATH = os.path.join("Data", f"Experimento_{EXP_NUM}", f"{NOMBRE}_data")
 
     # ---------------------------------
     

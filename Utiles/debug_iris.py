@@ -3,7 +3,7 @@ import numpy as np
 import os
 import time
 import math 
-# (matplotlib e io eliminados, ya no son necesarios)
+# (Matplotlib eliminado)
 
 # --- PARÁMETROS DE PREPROCESAMIENTO (FIJOS) ---
 GAUSSIAN_KERNEL_SIZE = (7, 7)
@@ -12,7 +12,7 @@ FIXED_THRESHOLD_VALUE = 30
 FIXED_KERNEL_N = 2         
 
 # --- PARÁMETROS DE FILTRADO PUPILA (FIJOS) ---
-FIXED_MIN_PUPIL_AREA = 1000 
+FIXED_MIN_PUPIL_AREA = 500 
 FIXED_MAX_PUPIL_AREA = 8000  
 
 # --- PARÁMETRO DE ROBUSTEZ (FILTRO DE FIT ELÍPTICO) ---
@@ -21,31 +21,31 @@ MAX_ELLIPTICAL_FIT_RATIO = 1.20
 # ----------------------------------------------
 
 # --- PARÁMETRO DE FILTRO DE BBOX PUPILA (FIJO) ---
-HORIZONTALITY_TOLERANCE = 1.30 
+HORIZONTALITY_TOLERANCE = 1.40 
 # -----------------------------------------------
 
-# --- <<<--- PARÁMETROS DEL MAPA DE GRADIENTES ---
-IRIS_MAX_SEARCH_SCALE_FACTOR = 5
-IRIS_RADIAL_RAYS = 400
-POSITIVE_GRADIENT_THRESHOLD = 3 # Umbral para 'puntos verdes'
-RING_END_THRESHOLD = -2 # Umbral negativo para detectar el FIN de un anillo
+# --- <<<--- PARÁMETROS DE BÚSQUEDA ELÍPTICA (Tus valores) ---
+IRIS_RADIAL_RAYS = 450            
+POSITIVE_GRADIENT_THRESHOLD = 2   
+RING_END_THRESHOLD = -2           
+PUPIL_SCALE_START = 1.0           
+PUPIL_SCALE_END = 5.2 # (Tu valor)ddddddddddd
+NUM_ELLIPTICAL_STEPS = 100        
 # --- <<<--- ---
 
-# --- FILTRO ETAPA 1 (ESTÁTICO) ---
-MIN_RADIUS_THRESHOLD = 55.0
-MAX_RADIUS_THRESHOLD = 110.0
+# --- ¡NUEVOS! PARÁMETROS DE FILTRADO (Basado en Radio Normalizado) ---
+MIN_NORMALIZED_RADIUS = 1.5    # (Filtro 1a) Mínimo 1.2x el tamaño de la pupila
+MAX_NORMALIZED_RADIUS = 4.2   # (Filtro 1b) ¡NUEVO! Máximo 4.5x (antes de 5.0)
+ROBUST_FILTER_THRESHOLD = 2    # (Filtro 2) Umbral de pertenencia (Z-score)
+MORPH_CLEANUP_KERNEL_SIZE = 7    # (Filtro 3) Kernel morfológico
 # --- <<<--- ---
 
-# --- FILTRO ETAPA 2 (DINÁMICO) ---
-ROBUST_FILTER_THRESHOLD = 2 # Umbral de pertenencia (Z-score robusto)
+# --- ETAPA 5 (SUAVIZADO) ---
+IRIS_SMOOTHING_ALPHA = 0.33 # Alpha para EMA (Equivalente a 5 frames: 2 / (5 + 1))
 # --- <<<--- ---
 
-# --- ETAPA 3 (MORFOLÓGICO) ---
-MORPH_CLEANUP_KERNEL_SIZE = 5 # Tamaño del kernel para rellenar huecos
-# --- <<<--- ---
-
-# ATENCIÓN: Confirma que esta ruta es correcta
-VIDEO_PATH = r"/home/vit/Documentos/Tesis3D/Videos/Experimento_3/Raul/Raul_intento_1.mp4" 
+# ATENCIÓN: Ruta actualizada a tu versión de Windows
+VIDEO_PATH = r"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_3\Raul\Raul_intento_3_ROI_640x480.mp4" 
 
 # --- FUNCIONES DE UTILIDAD (SIN CAMBIOS) ---
 def crop_to_aspect_ratio(image, width=640, height=480):
@@ -104,8 +104,6 @@ def obtener_oscuridad_media_contorno(image_gray, contour):
 
 def on_trackbar(val): pass
 
-# --- FUNCIÓN DE GRÁFICO DE CAJAS (ELIMINADA) ---
-
 # --- FUNCIÓN PRINCIPAL DE DEBUG (Modificada) ---
 def debug_full_frame_processing(video_path):
     cap = cv2.VideoCapture(video_path)
@@ -113,10 +111,13 @@ def debug_full_frame_processing(video_path):
     fps = cap.get(cv2.CAP_PROP_FPS); fps = fps if fps > 0 else 30
     frame_delay = int(1000 / fps)
 
-    window_name = "Debug Iris Fit" # <-- Título actualizado
+    window_name = "Elliptical Search Debug" 
     cv2.namedWindow(window_name)
     
     clahe = cv2.createCLAHE(clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=(8, 8))
+
+    # --- Variable de estado para el suavizado ---
+    smoothed_iris_ellipse = ((0,0),(0,0),0)
 
     while True:
         start_time = time.time()
@@ -129,9 +130,7 @@ def debug_full_frame_processing(video_path):
         
         frame_blurred = cv2.GaussianBlur(frame_cropped, GAUSSIAN_KERNEL_SIZE, 0)
         gray_frame_original = cv2.cvtColor(frame_blurred, cv2.COLOR_BGR2GRAY)
-
-        # --- 2. CLAHE ---
-        gray_frame_clahe = clahe.apply(gray_frame_original)
+        gray_frame_clahe = clahe.apply(gray_frame_original) 
 
         # --- 3. Binarization & Morphology (Pupila) ---
         kernel_size_pupil = (FIXED_KERNEL_N * 2) + 1
@@ -190,13 +189,7 @@ def debug_full_frame_processing(video_path):
         final_bgr_display = np.zeros((h_frame, w_frame, 3), dtype=np.uint8)
         
         # --- 6. Optimization & Drawing (Pupila) ---
-        cv2.drawContours(final_bgr_display, contours_in_area_range, -1, (255, 0, 0), 1) # Blue
-        cv2.drawContours(final_bgr_display, good_fit_contours, -1, (255, 255, 0), 1) # Cyan
-        cv2.drawContours(final_bgr_display, discarded_horizontal_contours, -1, (0, 0, 100), 1) # Red (oscuro)
-
         if best_pupil_contour is not None:
-            cv2.drawContours(final_bgr_display, [best_pupil_contour], -1, (0, 100, 0), 2) # Green (oscuro)
-            
             optimized_contour = optimize_contours_by_angle([best_pupil_contour])
             try:
                 if len(optimized_contour) >= 5:
@@ -208,46 +201,83 @@ def debug_full_frame_processing(video_path):
                 final_ellipse = None
         
         # --- ############################################# ---
-        # --- INICIO: LÓGICA DE MAPEO DE GRADIENTES ---
+        # --- INICIO: LÓGICA DE BÚSQUEDA ELÍPTICA ---
         # --- ############################################# ---
         
-        inner_texture_points = []
-        radii = [] 
-        final_inlier_points = [] 
-        fitted_iris_ellipse = None # <-- ¡NUEVO!
+        iris_edge_points = []
+        cleaned_points = [] 
+        current_fitted_ellipse = None
+        
+        if final_ellipse is None:
+            smoothed_iris_ellipse = ((0,0),(0,0),0)
         
         if final_ellipse:
             
-            (cx_f, cy_f), (pupil_w_axis, pupil_h_axis), angle = final_ellipse
+            # --- 1. Dibujar pupila en ambos lienzos ---
+            cv2.ellipse(frame_cropped, final_ellipse, (0, 255, 255), 2) # Pupila (Amarillo)
+            cv2.ellipse(final_bgr_display, final_ellipse, (0, 100, 0), 2) # Pupila (Verde Oscuro)
+
+            # --- 2. Extraer parámetros de la elipse de pupila ---
+            (cx_f, cy_f), (w_axis, h_axis), angle_deg = final_ellipse
             cx, cy = int(cx_f), int(cy_f)
-            pupil_radius = pupil_diameter / 2.0
             
-            min_search_radius = 0 
-            max_search_radius = int(pupil_radius * IRIS_MAX_SEARCH_SCALE_FACTOR)
+            semi_a = w_axis / 2.0
+            semi_b = h_axis / 2.0
+            if semi_a == 0: semi_a = 1.0
+            if semi_b == 0: semi_b = 1.0
             
-            # --- 3. Lanzar Rayos ---
+            angle_rad = np.deg2rad(angle_deg)
+            cos_rot = np.cos(angle_rad)
+            sin_rot = np.sin(angle_rad)
+
+            # --- 2b. Calcular y dibujar el ÁREA DE BÚSQUEDA EXTERIOR ---
+            s_outer = PUPIL_SCALE_END
+            outer_axes = (w_axis * s_outer, h_axis * s_outer)
+            outer_search_ellipse = ((cx_f, cy_f), outer_axes, angle_deg)
+            
+            cv2.ellipse(frame_cropped, outer_search_ellipse, (0, 165, 255), 2) # Naranja
+            cv2.ellipse(final_bgr_display, outer_search_ellipse, (0, 165, 255), 1) # Naranja (tenue)
+            
+            # --- 3. Lanzar "Rayos" Elípticos ---
             for i in range(IRIS_RADIAL_RAYS):
-                current_angle = (i / IRIS_RADIAL_RAYS) * 2 * np.pi
-                cos_a = np.cos(current_angle)
-                sin_a = np.sin(current_angle)
+                t = (i / IRIS_RADIAL_RAYS) * 2 * np.pi
+                cos_t = np.cos(t)
+                sin_t = np.sin(t)
+
+                s_start = PUPIL_SCALE_START # s = 1.0
+                x_local_start = (semi_a * s_start) * cos_t
+                y_local_start = (semi_b * s_start) * sin_t
+                x_rot_start = x_local_start * cos_rot - y_local_start * sin_rot
+                y_rot_start = x_local_start * sin_rot + y_local_start * cos_rot
                 
-                x_prev = cx
-                y_prev = cy
+                x_prev = int(cx + x_rot_start)
+                y_prev = int(cy + y_rot_start)
                 
                 if not (0 <= x_prev < w_frame and 0 <= y_prev < h_frame):
                     continue
                 prev_intensity = int(gray_frame_clahe[y_prev, x_prev])
-
+                
                 state = "SEARCHING"
 
-                # --- 4. Caminar a lo largo del rayo y PINTAR MAPA ---
-                for r in range(1, max_search_radius):
-                    x_curr = int(cx + r * cos_a)
-                    y_curr = int(cy + r * sin_a)
+                # --- 4. Caminar a lo largo del "rayo" elíptico ---
+                for step in range(1, NUM_ELLIPTICAL_STEPS + 1):
+                    
+                    s = PUPIL_SCALE_START + (step / NUM_ELLIPTICAL_STEPS) * (PUPIL_SCALE_END - PUPIL_SCALE_START)
+                    
+                    x_local = (semi_a * s) * cos_t
+                    y_local = (semi_b * s) * sin_t
+                    x_rotated = x_local * cos_rot - y_local * sin_rot
+                    y_rotated = x_local * sin_rot + y_local * cos_rot
+                    
+                    x_curr = int(cx + x_rotated)
+                    y_curr = int(cy + y_rotated)
                     
                     if not (0 <= x_curr < w_frame and 0 <= y_curr < h_frame):
                         break 
                     
+                    if x_curr == x_prev and y_curr == y_prev:
+                        continue
+                        
                     curr_intensity = int(gray_frame_clahe[y_curr, x_curr])
                     gradient = curr_intensity - prev_intensity
                     
@@ -258,12 +288,19 @@ def debug_full_frame_processing(video_path):
                     elif state == "IGNORING_FIRST_RING":
                         if gradient < RING_END_THRESHOLD:
                             state = "READY_TO_PAINT"
+                        try:
+                            final_bgr_display[y_curr, x_curr] = (50, 0, 0) # Azul oscuro
+                        except IndexError: pass
                     
                     elif state == "READY_TO_PAINT":
+                        try:
+                            final_bgr_display[y_curr, x_curr] = (50, 0, 0) # Azul oscuro
+                        except IndexError: pass
+
                         if gradient > POSITIVE_GRADIENT_THRESHOLD:
                             try:
                                 final_bgr_display[y_curr, x_curr] = (0, 255, 0) # Verde
-                                inner_texture_points.append((x_curr, y_curr))
+                                iris_edge_points.append((x_curr, y_curr))
                             except IndexError: pass
                             state = "DONE"
 
@@ -271,28 +308,39 @@ def debug_full_frame_processing(video_path):
                         break
                         
                     prev_intensity = curr_intensity
+                    x_prev, y_prev = x_curr, y_curr
 
-            # --- 5. FILTRO DE TRES ETAPAS ---
-            if len(inner_texture_points) > 0:
-                center_np = np.array([cx, cy])
-                points_np = np.array(inner_texture_points)
+            # --- 5. FILTRO DE TRES ETAPAS (¡LÓGICA REESCRITA!) ---
+            if len(iris_edge_points) > 0:
                 
-                radii = np.linalg.norm(points_np - center_np, axis=1) # Radios de *todos* los puntos
+                # --- Pre-cálculo: Calcular Radio Normalizado para *todos* los puntos ---
+                points_data = [] 
                 
-                # --- ETAPA 1: Filtro Estático (Hardcoded) ---
-                stage_one_inliers_pts = []
-                stage_one_inliers_rad = []
-                stage_one_outliers_pts = []
+                for pt in iris_edge_points:
+                    x_p, y_p = pt
+                    x_trans = x_p - cx
+                    y_trans = y_p - cy
+                    x_derot = x_trans * cos_rot + y_trans * sin_rot
+                    y_derot = -x_trans * sin_rot + y_trans * cos_rot
+                    x_norm = x_derot / semi_a
+                    y_norm = y_derot / semi_b
+                    norm_radius = np.sqrt(x_norm**2 + y_norm**2)
+                    points_data.append((pt, norm_radius))
+
+                # --- ETAPA 1: Filtro de Banda de Paso (Estático) ---
+                stage_one_inliers_pts = [] # (x, y)
+                stage_one_inliers_rad = [] # (radio_normalizado)
+                stage_one_outliers_pts = [] # (x, y)
                 
-                for i, pt in enumerate(inner_texture_points):
-                    r = radii[i]
-                    if MIN_RADIUS_THRESHOLD <= r <= MAX_RADIUS_THRESHOLD:
-                        stage_one_inliers_pts.append(pt)
-                        stage_one_inliers_rad.append(r)
-                    else:
+                for pt, r_norm in points_data:
+                    # ¡LÓGICA MODIFICADA!
+                    if r_norm < MIN_NORMALIZED_RADIUS or r_norm > MAX_NORMALIZED_RADIUS:
                         stage_one_outliers_pts.append(pt)
+                    else:
+                        stage_one_inliers_pts.append(pt)
+                        stage_one_inliers_rad.append(r_norm)
                 
-                # --- ETAPA 2: Filtro Dinámico (Mediana) ---
+                # --- ETAPA 2: Filtro Dinámico (Mediana sobre Radio Normalizado) ---
                 stage_two_inliers_pts = [] 
                 stage_two_outliers_pts = [] 
 
@@ -302,8 +350,8 @@ def debug_full_frame_processing(video_path):
                     if mad == 0: mad = 1.0 
                     
                     for i, pt in enumerate(stage_one_inliers_pts):
-                        r = stage_one_inliers_rad[i]
-                        z_score_robusta = np.abs(r - median_radius) / mad
+                        r_norm = stage_one_inliers_rad[i]
+                        z_score_robusta = np.abs(r_norm - median_radius) / mad
                         
                         if z_score_robusta < ROBUST_FILTER_THRESHOLD:
                             stage_two_inliers_pts.append(pt)
@@ -323,51 +371,63 @@ def debug_full_frame_processing(video_path):
                     cleaned_mask = cv2.morphologyEx(point_mask, cv2.MORPH_CLOSE, kernel)
                     
                     coords = np.where(cleaned_mask == 255)
-                    final_inlier_points = list(zip(coords[1], coords[0])) # (x, y)
+                    cleaned_points = list(zip(coords[1], coords[0])) # (x, y)
 
-                # --- ¡NUEVO! ETAPA 4: AJUSTE DE ELIPSE ---
-                if len(final_inlier_points) >= 5:
+                # --- ETAPA 4: AJUSTE DE ELIPSE ---
+                if len(cleaned_points) >= 5:
                     try:
-                        # Convertir lista de tuplas a array de numpy
-                        final_points_np = np.array(final_inlier_points, dtype=np.int32).reshape((-1, 1, 2))
-                        fitted_iris_ellipse = cv2.fitEllipse(final_points_np)
+                        final_points_np = np.array(cleaned_points, dtype=np.int32).reshape((-1, 1, 2))
+                        current_fitted_ellipse = cv2.fitEllipse(final_points_np) # Elipse "cruda"
                     except cv2.error as e:
-                        print(f"Error en fitEllipse: {e}")
-                        fitted_iris_ellipse = None
+                        current_fitted_ellipse = None
                 
-                # --- Dibujar los puntos clasificados (Actualizado) ---
+                # --- ETAPA 5: SUAVIZADO (EMA) ---
+                if current_fitted_ellipse is not None:
+                    if smoothed_iris_ellipse[1][0] == 0.0: # Si es la primera vez
+                        smoothed_iris_ellipse = current_fitted_ellipse
+                    else:
+                        alpha = IRIS_SMOOTHING_ALPHA
+                        scx = (current_fitted_ellipse[0][0] * alpha) + (smoothed_iris_ellipse[0][0] * (1.0 - alpha))
+                        scy = (current_fitted_ellipse[0][1] * alpha) + (smoothed_iris_ellipse[0][1] * (1.0 - alpha))
+                        sax = (current_fitted_ellipse[1][0] * alpha) + (smoothed_iris_ellipse[1][0] * (1.0 - alpha))
+                        say = (current_fitted_ellipse[1][1] * alpha) + (smoothed_iris_ellipse[1][1] * (1.0 - alpha))
+                        sang = (current_fitted_ellipse[2] * alpha) + (smoothed_iris_ellipse[2] * (1.0 - alpha))
+                        smoothed_iris_ellipse = ((scx, scy), (sax, say), sang)
+
+                # --- 6. DIBUJAR LOS PUNTOS ---
                 for pt in stage_one_outliers_pts:
-                    cv2.circle(final_bgr_display, pt, 2, (0, 0, 255), -1) # Outliers Etapa 1 (Rojo)
+                    cv2.circle(final_bgr_display, pt, 2, (0, 0, 255), -1) # Outliers E1 (Rojo)
                 for pt in stage_two_outliers_pts:
-                    cv2.circle(final_bgr_display, pt, 2, (0, 255, 255), -1) # Outliers Etapa 2 (Amarillo)
-                for pt in final_inlier_points:
+                    cv2.circle(final_bgr_display, pt, 2, (0, 255, 255), -1) # Outliers E2 (Amarillo)
+                for pt in cleaned_points:
                     cv2.circle(final_bgr_display, pt, 2, (255, 255, 255), -1) # Inliers Finales (Blanco)
 
         # --- ############################################# ---
-        # --- FIN: LÓGICA DE MAPEO DE GRADIENTES ---
+        # --- FIN: LÓGICA DE BÚSQUEDA ELÍPTICA ---
         # --- ############################################# ---
 
         # --- 7. Final Visualization ---
         
-        # Fila superior
-        cv2.ellipse(frame_cropped, final_ellipse, (0, 255, 255), 2) # Pupila (Amarillo)
-        cv2.circle(frame_cropped, (cx, cy), max_search_radius, (0, 165, 255), 1) # Límite (Naranja)
+        # Dibujar la elipse SUAVIZADA
+        if smoothed_iris_ellipse[1][0] > 0:
+            cv2.ellipse(frame_cropped, smoothed_iris_ellipse, (255, 0, 255), 2) # Iris (Magenta)
+            cv2.ellipse(final_bgr_display, smoothed_iris_ellipse, (255, 0, 255), 2) # Iris (Magenta)
         
-        # --- ¡NUEVO! Dibujar elipse de iris ajustada ---
-        if fitted_iris_ellipse is not None:
-            cv2.ellipse(frame_cropped, fitted_iris_ellipse, (255, 0, 255), 2) # Iris (Magenta)
-            cv2.ellipse(final_bgr_display, fitted_iris_ellipse, (255, 0, 255), 2) # Iris (Magenta)
-
         # Añadir textos a la vista del frame
         cv2.putText(frame_cropped, f"Pupil Diameter: {pupil_diameter:.1f}px", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame_cropped, f"Pos Grad (Verde): {POSITIVE_GRADIENT_THRESHOLD}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame_cropped, f"Ring End Thresh: {RING_END_THRESHOLD}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(frame_cropped, f"Min/Max Radius: {MIN_RADIUS_THRESHOLD}/{MAX_RADIUS_THRESHOLD}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
-        cv2.putText(frame_cropped, f"Robust Thresh (S2): {ROBUST_FILTER_THRESHOLD}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(frame_cropped, f"Morph Kernel (S3): {MORPH_CLEANUP_KERNEL_SIZE}", (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(frame_cropped, f"Final Points: {len(final_inlier_points)}", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame_cropped, f"Pos Grad: {POSITIVE_GRADIENT_THRESHOLD}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(frame_cropped, f"Ring End: {RING_END_THRESHOLD}", (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame_cropped, f"Scale Start/End: {PUPIL_SCALE_START}/{PUPIL_SCALE_END}", (10, 120), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame_cropped, f"S1 Norm. Rad: {MIN_NORMALIZED_RADIUS}-{MAX_NORMALIZED_RADIUS}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2) # <-- Texto actualizado
+        cv2.putText(frame_cropped, f"S2 Robust: {ROBUST_FILTER_THRESHOLD}", (10, 180), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+        cv2.putText(frame_cropped, f"S3 Morph: {MORPH_CLEANUP_KERNEL_SIZE}", (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(frame_cropped, f"S4 Smooth Alpha: {IRIS_SMOOTHING_ALPHA}", (10, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 255), 2)
+        cv2.putText(frame_cropped, f"Cleaned Points: {len(cleaned_points)}", (10, 270), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        cv2.putText(frame_cropped, "Pupila (Amarillo)", (10, h_frame - 40), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+        cv2.putText(frame_cropped, "Límite Búsqueda (Naranja)", (10, h_frame - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 165, 255), 1)
 
-        # Añadir textos a la vista del mapa
+        # Añadir textos a la vista del mapa (¡ACTUALIZADO!)
         text_offset_x = 10
         cv2.putText(final_bgr_display, "Mapa de Puntos", (text_offset_x, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         cv2.putText(final_bgr_display, "Inliers (Blanco)", (text_offset_x, 55), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
@@ -376,8 +436,6 @@ def debug_full_frame_processing(video_path):
         cv2.putText(final_bgr_display, "Iris Fit (Magenta)", (text_offset_x, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 0, 255), 1)
         
         combined_view = np.hstack((frame_cropped, final_bgr_display))
-
-        # (Gráfico de cajas eliminado, 'vstack' ya no es necesario)
 
         cv2.imshow(window_name, combined_view)
 
