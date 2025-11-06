@@ -1,17 +1,17 @@
 import os
 import csv  # <-- Importar CSV
 # Importamos la única función que necesitamos desde nuestro módulo de utilidades
-from utils.eye_tracker_utils import process_video_from_path
+from utils.eye_tracker_utils2 import process_video_from_path
 import os
 
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (250, 220) # (ancho,alto)
+    prev = (270, 240) # (ancho,alto)
 
-    EXP_NUM = 2
+    EXP_NUM = 3
 
-    NOMBRE= "Majo"
+    NOMBRE= "Arteaga"
 
     # Ruta de videos - compatible con Windows y Linux
     VIDEO_FOLDER_PATH = os.path.join("Videos", f"Experimento_{EXP_NUM}", NOMBRE)

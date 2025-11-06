@@ -2,12 +2,12 @@ import cv2
 import os
 
 # --- Configuración ---
-
+nombre = "Victoria"
 # 1. Carpeta que contiene tus videos fuente
-input_folder = "/home/vit/Documentos/Tesis3D/Videos/Experimento_3/Raul"
+input_folder = rf"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_1\{nombre}"
 
 # 2. Carpeta donde se guardarán TODOS los frames
-output_folder = '/home/vit/Documentos/Tesis3D/Dataset'
+output_folder = r'C:\\Users\\Victor\\Documents\\Tesis3D\\Dataset'
 
 # 3. Intervalo de frames (guardar 1 cada 5)
 frame_interval = 5
