@@ -2,15 +2,15 @@ import cv2
 import os
 
 # --- Configuración ---
-nombre = "Victoria"
+nombre = "Geremy"
 # 1. Carpeta que contiene tus videos fuente
-input_folder = rf"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_1\{nombre}"
+input_folder = rf"/home/vit/Documentos/Tesis3D/Videos/Experimento_1/{nombre}"
 
 # 2. Carpeta donde se guardarán TODOS los frames
-output_folder = r'C:\\Users\\Victor\\Documents\\Tesis3D\\Dataset'
+output_folder = r'/home/vit/Documentos/Tesis3D/Videos'
 
 # 3. Intervalo de frames (guardar 1 cada 5)
-frame_interval = 5
+frame_interval = 120
 
 # 4. Extensiones de video que queremos procesar (en minúsculas)
 video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.mpg')

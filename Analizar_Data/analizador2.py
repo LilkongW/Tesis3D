@@ -7,7 +7,7 @@ import os
 import glob 
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
-NOMBRE = "Arteaga"
+NOMBRE = "Sanchez"
 # Directorio de ENTRADA
 EXP_NUM = 1 # <--- ESTA VARIABLE AHORA CONTROLA LOS ESTÍMULOS
 INPUT_DIR = fr"Data/Experimento_{EXP_NUM}/{NOMBRE}_data"

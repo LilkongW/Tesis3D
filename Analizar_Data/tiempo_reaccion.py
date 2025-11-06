@@ -7,7 +7,7 @@ import sys
 
 # ========== CONFIGURACIÓN ==========
 # (Se mantendrán los valores del script original, el usuario puede cambiarlos si es necesario)
-NOMBRE = "Raul"
+NOMBRE = "Sanchez"
 EXP_NUM = 1  # 1 o 2
 INPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data"
 OUTPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data/analisis_reaccion"

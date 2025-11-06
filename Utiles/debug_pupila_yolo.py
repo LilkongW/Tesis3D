@@ -3,16 +3,26 @@ import numpy as np
 import os
 import time
 import math 
-from ultralytics import YOLO # --- ¡NUEVO! ---
+from ultralytics import YOLO
 
-# --- ⚠️ CONFIGURACIÓN ---
-# ⚠️ ¡DEBES ACTUALIZAR ESTAS RUTAS!
-YOLO_MODEL_PATH = r"C:\Users\Victor\Documents\Tesis3D\models\best.pt"
-VIDEO_PATH = r"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_1\Victor\Victor3_intento_1.mp4" 
+# --- ⚠️ CONFIGURACIÓN DINÁMICA DE RUTAS ---
 
-# --- ¡NUEVO PARÁMETRO DE DEBUG! ---
+# 1. Definir la ruta base según el sistema operativo
+if os.name == 'nt': # 'nt' es el identificador para Windows
+    BASE_DIR = r"C:\Users\Victor\Documents\Tesis3D"
+else: # 'posix' es para Linux, macOS, etc.
+    BASE_DIR = r"/home/vit/Documentos/Tesis3D"
+
+Nombre = "Sanchez"
+# 2. Construir las rutas completas usando os.path.join
+YOLO_MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
+VIDEO_PATH = os.path.join(BASE_DIR, "Videos", "Experimento_1", Nombre, f"{Nombre}_intento_8.mp4")
+
+# --- ¡NUEVOS PARÁMETROS DE DEBUG! ---
 INITIAL_CONFIDENCE_X100 = 50 # (Representa 0.50)
-# -----------------------------
+# ⚠️ ¡NUEVO! Umbral para guardar frames "difíciles" (Baja Confianza)
+INITIAL_SAVE_THRESHOLD_X100 = 75 # (Representa 0.75) 
+# ------------------------------------
 
 # --- FUNCIONES DE UTILIDAD (Sin cambios) ---
 
@@ -31,7 +41,7 @@ def crop_to_aspect_ratio(image, width=640, height=480):
     return cv2.resize(cropped_img, (width, height))
 
 def optimize_contours_by_angle(contours):
-    # ... (Sin cambios, se sigue usando) ...
+    # ... (Sin cambios) ...
     if not isinstance(contours, list) or len(contours) < 1 or len(contours[0]) < 5: return np.array([], dtype=np.int32).reshape((-1, 1, 2))
     if len(contours[0].shape) == 2: all_contours = contours[0].reshape((-1, 1, 2))
     else: all_contours = contours[0]
@@ -55,9 +65,15 @@ def optimize_contours_by_angle(contours):
 
 def on_trackbar(val): pass
 
-# --- FUNCIÓN PRINCIPAL DE DEBUG (Totalmente Reescrita para YOLO) ---
+# --- FUNCIÓN PRINCIPAL DE DEBUG (Modificada para Guardar Frames) ---
 def debug_yolo_roi_processing(video_path, model_path):
     
+    # --- ¡NUEVO! Definir y crear carpeta de guardado ---
+    DEBUG_SAVE_DIR = os.path.join(BASE_DIR, "frames_para_retrain", Nombre)
+    os.makedirs(DEBUG_SAVE_DIR, exist_ok=True)
+    print(f"✅ Guardando frames para re-entrenar en: {DEBUG_SAVE_DIR}")
+    # --- --- ---
+
     # --- 1. Cargar Modelo y Video ---
     try:
         model = YOLO(model_path)
@@ -70,26 +86,40 @@ def debug_yolo_roi_processing(video_path, model_path):
     frame_delay = int(1000 / fps)
 
     print(f"Debug Pipeline YOLO: {video_path}")
-    print("Ajusta el slider de 'Confianza'.")
+    print("Ajusta los sliders. 'Confianza' (filtro) y 'Guardar < Conf' (umbral de guardado).")
     print("Press 'q' to quit, 'space' to pause.")
 
     window_name = "Debug | YOLO ROI (Azul) -> Fit (Amarillo)"
     cv2.namedWindow(window_name)
     
-    # --- ¡NUEVO SLIDER! ---
+    # --- Sliders ---
     cv2.createTrackbar("Confianza (x100)", window_name, INITIAL_CONFIDENCE_X100, 100, on_trackbar)
+    # --- ¡NUEVO SLIDER DE GUARDADO! ---
+    cv2.createTrackbar("Guardar < Conf (x100)", window_name, INITIAL_SAVE_THRESHOLD_X100, 100, on_trackbar)
+
 
     while True:
         start_time = time.time()
+        # --- ¡NUEVO! Banderas de estado por frame ---
+        should_save_frame = False 
+        save_reason = ""          
+        # --- --- ---
+        
         ret, frame = cap.read()
         if not ret: cap.set(cv2.CAP_PROP_POS_FRAMES, 0); continue
 
-        # --- 2. Preprocessing (Solo recortar) ---
+        # --- ¡NUEVO! Obtener Nro de frame ---
+        current_frame_num = int(cap.get(cv2.CAP_PROP_POS_FRAMES))
+        
+        # --- 2. Preprocessing ---
         frame_cropped = crop_to_aspect_ratio(frame)
+        # --- ¡NUEVO! Guardar una copia limpia para el dataset ---
+        frame_to_save = frame_cropped.copy()
+        # --- --- ---
+        
         h_frame, w_frame = frame_cropped.shape[:2]
         
         # Crear paneles de visualización
-        # Panel derecho para el zoom del ROI y la máscara
         debug_panel_width = 320
         debug_panel_height = h_frame # 480
         debug_panel = np.zeros((debug_panel_height, debug_panel_width, 3), dtype=np.uint8)
@@ -100,17 +130,19 @@ def debug_yolo_roi_processing(video_path, model_path):
         current_conf_x100 = cv2.getTrackbarPos("Confianza (x100)", window_name)
         current_conf = current_conf_x100 / 100.0
         
+        # --- ¡NUEVO! Obtener umbral de guardado ---
+        current_save_conf_x100 = cv2.getTrackbarPos("Guardar < Conf (x100)", window_name)
+        current_save_conf = current_save_conf_x100 / 100.0
+        
         results = model.track(frame_cropped, persist=True, verbose=False, conf=current_conf)
 
         final_ellipse = None
         best_box = None
-        max_conf_found = 0.0 # Para mostrar la confianza de la caja seleccionada
+        max_conf_found = 0.0 
 
         # --- 4. Encontrar la mejor caja (ROI) ---
         if results[0].boxes:
             for box in results[0].boxes:
-                # El tracker a veces baja la confianza, 
-                # pero nos quedamos con la detección original si es alta
                 if box.conf[0] > max_conf_found:
                     max_conf_found = box.conf[0]
                     best_box = box
@@ -122,7 +154,6 @@ def debug_yolo_roi_processing(video_path, model_path):
             x1, y1 = max(0, x1), max(0, y1)
             x2, y2 = min(w_frame, x2), min(h_frame, y2)
             
-            # Dibujar BBox (ROI) en el frame principal (AZUL)
             cv2.rectangle(frame_cropped, (x1, y1), (x2, y2), (255, 0, 0), 2)
             
             if x1 < x2 and y1 < y2:
@@ -130,16 +161,11 @@ def debug_yolo_roi_processing(video_path, model_path):
                 roi = frame_cropped[y1:y2, x1:x2]
                 gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
                 _, binary_roi = cv2.threshold(gray_roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-                
-                contours_roi, _ = cv2.findContours(binary_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                contours_roi, _ = cv2.findContours(binary_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE)
                 
                 if contours_roi:
                     best_pupil_contour_roi = max(contours_roi, key=cv2.contourArea)
-                    
-                    # 5c. Traducir contorno a coordenadas absolutas
                     best_pupil_contour_abs = best_pupil_contour_roi + (x1, y1)
-
-                    # 5d. Optimizar y Ajustar Elipse
                     optimized_contour = optimize_contours_by_angle([best_pupil_contour_abs])
                     
                     try:
@@ -151,18 +177,29 @@ def debug_yolo_roi_processing(video_path, model_path):
                         final_ellipse = None
                         
                     # 5e. Preparar visualización del panel de debug
-                    # Zoom del ROI
                     roi_zoom = cv2.resize(roi, (debug_panel_width, roi_zoom_h))
                     debug_panel[0:roi_zoom_h, :] = roi_zoom
-                    
-                    # Zoom de la Máscara
                     binary_roi_bgr = cv2.cvtColor(binary_roi, cv2.COLOR_GRAY2BGR)
-                    # Dibujar contorno seleccionado (VERDE) en la máscara
                     cv2.drawContours(binary_roi_bgr, [best_pupil_contour_roi], -1, (0, 255, 0), 1)
                     mask_zoom = cv2.resize(binary_roi_bgr, (debug_panel_width, mask_zoom_h))
                     debug_panel[roi_zoom_h:debug_panel_height, :] = mask_zoom
         
-        # --- 6. Visualización Final ---
+        # --- 6. ¡NUEVO! Lógica de Guardado de Frames ---
+        if final_ellipse is None:
+            should_save_frame = True
+            # Distinguir por qué falló
+            if best_box is None:
+                save_reason = "NO_ROI" # YOLO no encontró nada
+            else:
+                save_reason = "NO_ELIPSE_FIT" # YOLO encontró ROI, pero OpenCV falló
+        
+        # Se encontró elipse, pero la confianza del ROI de YOLO fue baja
+        elif max_conf_found < current_save_conf: 
+            should_save_frame = True
+            save_reason = f"BAJA_CONF_{max_conf_found:.2f}"
+        # --- --- ---
+
+        # --- 7. Visualización Final ---
         
         # Dibujar Elipse final (AMARILLO) en el frame principal
         if final_ellipse is not None:
@@ -171,20 +208,42 @@ def debug_yolo_roi_processing(video_path, model_path):
         # Combinar frame principal y panel de debug
         combined_view = np.hstack((frame_cropped, debug_panel))
         
-        # Añadir textos
+        # --- Textos de información (ACTUALIZADO) ---
         conf_text = f"Conf. Slider: {current_conf:.2f}"
+        save_conf_text = f"Guardar < {current_save_conf:.2f}" # ¡NUEVO!
         cv2.putText(combined_view, conf_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        cv2.putText(combined_view, save_conf_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 200, 255), 2) # Naranja
+
         if best_box is not None:
              found_text = f"Conf. Detectada: {max_conf_found:.2f}"
-             cv2.putText(combined_view, found_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
+             cv2.putText(combined_view, found_text, (10, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
 
+        # Textos de ayuda
         cv2.putText(combined_view, "Original + YOLO ROI (Azul) + Fit (Am)", (10, h_frame - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
         cv2.putText(combined_view, "Zoom ROI (Arriba)", (w_frame + 10, roi_zoom_h - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         cv2.putText(combined_view, "Zoom Mascara + Contorno (Verde)", (w_frame + 10, debug_panel_height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 1)
 
+        # --- ¡NUEVO! Acción de guardado y texto en pantalla ---
+        if should_save_frame:
+            # 1. Mostrar texto en pantalla
+            save_text = f"GUARDANDO ({save_reason})"
+            # Centrar texto
+            text_size, _ = cv2.getTextSize(save_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+            text_x = (w_frame - text_size[0]) // 2
+            text_y = (h_frame + text_size[1]) // 2
+            cv2.putText(combined_view, save_text, (text_x, text_y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            
+            # 2. Guardar el frame (la copia limpia 'frame_to_save')
+            frame_filename = f"frame_{current_frame_num:06d}_{save_reason}.jpg"
+            save_path = os.path.join(DEBUG_SAVE_DIR, frame_filename)
+            
+            # Guardamos la copia que no tiene dibujos
+            cv2.imwrite(save_path, frame_to_save) 
+        # --- --- ---
+
         cv2.imshow(window_name, combined_view)
 
-        # --- 7. Control de Teclado ---
+        # --- 8. Control de Teclado ---
         processing_time = time.time() - start_time
         wait_time = max(1, int(frame_delay - (processing_time * 1000)))
         key = cv2.waitKey(wait_time) & 0xFF

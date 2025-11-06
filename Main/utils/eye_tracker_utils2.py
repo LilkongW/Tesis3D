@@ -6,7 +6,7 @@ import os
 import time
 import csv
 from ultralytics import YOLO  # --- NUEVO --- Importar YOLO
-
+import os 
 # --- PARÁMETROS DE FILTRADO Y PREPROCESAMIENTO ---
 # (Se mantienen los parámetros de CLAHE y Gaussian para el preproc. del IRIS)
 GAUSSIAN_KERNEL_SIZE = (7, 7)
@@ -15,11 +15,16 @@ CLAHE_CLIP_LIMIT = 1.0
 # FIXED_THRESHOLD_VALUE = 50  (Eliminado, ahora se usa Otsu en el ROI)
 # MORPH_KERNEL_SIZE = 5       (Eliminado, no se usa en el pipeline de YOLO)
 # ------------------------------------------
+# 1. Definir la ruta base según el sistema operativo
+if os.name == 'nt': # 'nt' es el identificador para Windows
+    BASE_DIR = r"C:\Users\Victor\Documents\Tesis3D"
+else: # 'posix' es para Linux, macOS, etc.
+    BASE_DIR = r"/home/vit/Documentos/Tesis3D"
 
 # --- <<<--- ¡NUEVOS PARÁMETROS DE IA! ---
 # ⚠️ ¡DEBES ACTUALIZAR ESTA RUTA!
-YOLO_MODEL_PATH = r"C:\Users\Victor\Documents\Tesis3D\models\best.pt"
-YOLO_MIN_CONFIDENCE = 0.8  # Umbral de confianza (0.0 a 1.0)
+YOLO_MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
+YOLO_MIN_CONFIDENCE = 0.5  # Umbral de confianza (0.0 a 1.0)
 # --- <<<--- ---
 
 # --- PARÁMETRO DE ESTABILIDAD DEL MODELO ---
