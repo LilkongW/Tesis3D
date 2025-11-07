@@ -5,31 +5,37 @@ import numpy as np
 import queue
 from threading import Thread, Event, Lock
 
+# --- 1. CONFIGURACIÓN PRINCIPAL ---
+
 # Índice de la webcam
-WEBCAM_INDEX = 1    
+WEBCAM_INDEX = 1 
 
 # Número de experimento (para seleccionar video de estímulo)
+# 1 = 9 Puntos
+# 2 = 5 Puntos (usado como calibración)
+# 3 = Espiral (ACTIVARÁ EL MODO DE CALIBRACIÓN PREVIA EN VIVO)
 EXP_NUM = 3
 
-# FPS de grabación de la webcam
+# FPS de grabación de la webcam (debe coincidir con la config de la webcam)
 OUTPUT_FPS = 30
 
-# Cola para almacenar frames de la Webcam
+# --- 2. CONFIGURACIÓN DE RUTAS ---
+# !!! Modifica estas rutas para que coincidan con tu PC !!!
+
+# Ruta base para GUARDAR los videos de la webcam
+BASE_SAVE_PATH = "C:\\Users\\Victor\\Documents\\Tesis3D\\Data" 
+
+# Ruta base donde ESTÁN los videos de estímulo (los .mp4 generados)
+STIMULUS_VIDEO_PATH = "C:\\Users\\Victor\\Documents\\Tesis3D\\Videos\\Animaciones_experimentos"
+
+# --- 3. VARIABLES GLOBALES (No tocar) ---
 frame_queue = queue.Queue(maxsize=120)
 screen_width, screen_height = 1920, 1080
-
-# Variables globales para las dimensiones
 cam_height, cam_width = 480, 640
-
-# Variables de control
 recording_active = False
 capture_active = True
-
-# Eventos para sincronización
 start_recording = Event()
 recording_stopped = Event()
-
-# Variable global para el VideoWriter actual
 current_video_writer = None
 current_output_path = None
 writer_lock = Lock()
@@ -47,11 +53,9 @@ def capture_webcam_stream():
         capture_active = False
         return
     
-    # Configurar webcam a 30 FPS
-    print("[WEBCAM] Configurando webcam a 30 FPS...")
+    # Configurar webcam a 30 FPS y resolución estándar
+    print("[WEBCAM] Configurando webcam a 30 FPS y 640x480...")
     cap_webcam.set(cv2.CAP_PROP_FPS, 30)
-    
-    # Configurar resolución estándar para asegurar 30 FPS estables
     cap_webcam.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
     cap_webcam.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     
@@ -66,9 +70,8 @@ def capture_webcam_stream():
     
     if actual_fps < 25:
         print(f"[WEBCAM] ⚠️  ADVERTENCIA: FPS muy bajos ({actual_fps})")
-        print("[WEBCAM] ⚠️  La sincronización puede no ser precisa")
     
-    # Obtener dimensiones después de la configuración
+    # Obtener dimensiones reales
     ret, first_frame = cap_webcam.read()
     if ret:
         cam_height, cam_width, _ = first_frame.shape
@@ -105,7 +108,7 @@ def capture_webcam_stream():
         current_time = time.time()
         if current_time - last_fps_print_time >= 10:
             fps = frame_count / (current_time - last_fps_print_time)
-            print(f"[WEBCAM] FPS de captura: {fps:.2f}")
+            print(f"[WEBCAM] FPS de captura: {fps:.2f} (Cola: {frame_queue.qsize()})")
             frame_count = 0
             last_fps_print_time = current_time
     
@@ -179,11 +182,8 @@ def recording_worker():
         expected_frames = int(recording_duration * OUTPUT_FPS)
         print("[RECORDER] ⏹️  Grabación detenida")
         print(f"[RECORDER] ✓ Frames grabados: {frame_count}")
-        print(f"[RECORDER] ✓ Frames esperados (~{OUTPUT_FPS} FPS): {expected_frames}")
         print(f"[RECORDER] ✓ Duración: {recording_duration:.2f}s")
         print(f"[RECORDER] ✓ FPS promedio real: {frame_count/recording_duration:.2f}")
-        if dropped_frames > 0:
-            print(f"[RECORDER] ⚠️  Total frames perdidos: {dropped_frames}")
         
         # Liberar el VideoWriter
         with writer_lock:
@@ -239,7 +239,7 @@ def show_countdown(window_name, countdown_text="Prepárate", wait_time=2000):
     text_y = (screen_height + text_size[1]) // 2
     
     cv2.putText(countdown_frame, countdown_text, (text_x, text_y), font, 
-               font_scale, (100, 200, 255), font_thickness, cv2.LINE_AA)
+                font_scale, (100, 200, 255), font_thickness, cv2.LINE_AA)
     cv2.imshow(window_name, countdown_frame)
     cv2.waitKey(wait_time)
 
@@ -259,7 +259,7 @@ def show_number_countdown(window_name):
         text_y = (screen_height + text_size[1]) // 2
         
         cv2.putText(countdown_frame, text, (text_x, text_y), font, 
-                   font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+                    font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
         cv2.imshow(window_name, countdown_frame)
         cv2.waitKey(1000)
 
@@ -276,28 +276,22 @@ def purge_frame_queue():
     return purged_count
 
 
-def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_intento, 
-                             exp_width, exp_height, save_path, is_first_iteration, total_frames):
-    """Ejecuta UNA iteración del experimento"""
+def run_experiment_iteration(cap_stimulus, stim_fps, stim_width, stim_height, total_frames, 
+                             stim_name, nombre_persona, numero_intento, save_path):
+    """
+    Ejecuta UNA iteración de UN estímulo (ya sea calibración o espiral).
+    """
     global recording_active
     
-    print("\n" + "="*70)
-    print(f"   INTENTO {numero_intento}")
-    print("="*70)
-    
     # Preparar VideoWriter para esta iteración
-    output_filename = f"{nombre_persona}_intento_{numero_intento}.mp4"
+    output_filename = f"{nombre_persona}_{stim_name}_intento_{numero_intento}.mp4"
     output_video_path = os.path.join(save_path, output_filename)
     
     if not prepare_video_writer(output_video_path, cam_width, cam_height):
-        print(f"[INTENTO {numero_intento}] ❌ Error al preparar grabación. Saltando iteración.")
+        print(f"[{stim_name} Intento {numero_intento}] ❌ Error al preparar grabación. Saltando iteración.")
         return False
     
-    # Mensaje de preparación (solo después de la primera iteración)
-    if not is_first_iteration:
-        show_countdown("Experiment Video", "Prepárate para el siguiente", 2000)
-    
-    # Cuenta regresiva
+    # --- Cuenta regresiva 3-2-1 ---
     show_number_countdown("Experiment Video")
     
     # "Comenzando..."
@@ -310,22 +304,22 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
     text_x = (screen_width - text_size[0]) // 2
     text_y = (screen_height + text_size[1]) // 2
     cv2.putText(countdown_frame, text, (text_x, text_y), font, 
-               font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+                font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
     cv2.imshow("Experiment Video", countdown_frame)
     cv2.waitKey(1000)
     
     # CRÍTICO: Purgar cola JUSTO antes de empezar
     purged = purge_frame_queue()
-    print(f"[INTENTO {numero_intento}] Cola purgada ({purged} frames)")
+    print(f"[{stim_name} Intento {numero_intento}] Cola purgada ({purged} frames)")
     
     # Pequeña espera para que la cola se estabilice
     time.sleep(0.1)
     
     # Reiniciar video al inicio
-    cap_experiment.set(cv2.CAP_PROP_POS_FRAMES, 0)
+    cap_stimulus.set(cv2.CAP_PROP_POS_FRAMES, 0)
     
     print(f"\n{'⚡'*35}")
-    print(f"   ¡INICIANDO INTENTO {numero_intento}!")
+    print(f"   ¡INICIANDO {stim_name.upper()} (Intento {numero_intento})!")
     print(f"{'⚡'*35}\n")
     
     # SINCRONIZACIÓN MEJORADA: Activar grabación ANTES del loop
@@ -337,7 +331,7 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
     
     # Reproducir experimento
     next_frame_time = time.time()
-    frame_interval = 1.0 / exp_fps
+    frame_interval = 1.0 / stim_fps
     
     experiment_start_time = time.time()
     experiment_frame_count = 0
@@ -350,16 +344,16 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
             delay_ms = max(1, int((next_frame_time - current_time) * 1000))
             key = cv2.waitKey(delay_ms) & 0xFF
             if key == ord('q'):
-                print(f"[INTENTO {numero_intento}] Detenido manualmente.")
+                print(f"[{stim_name} Intento {numero_intento}] Detenido manualmente.")
                 recording_active = False
                 return False
             continue
         
         # Leer frame del experimento
-        ret_exp, frame_exp = cap_experiment.read()
+        ret_exp, frame_exp = cap_stimulus.read()
         if not ret_exp:
             experiment_duration = time.time() - experiment_start_time
-            print(f"[INTENTO {numero_intento}] ✓ Video finalizado.")
+            print(f"[{stim_name} Intento {numero_intento}] ✓ Video finalizado.")
             print(f"[EXPERIMENTO] Duración real: {experiment_duration:.2f}s")
             print(f"[EXPERIMENTO] Frames mostrados: {experiment_frame_count}/{total_frames}")
             print(f"[EXPERIMENTO] FPS promedio: {experiment_frame_count/experiment_duration:.2f}")
@@ -367,8 +361,8 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
         
         experiment_frame_count += 1
         
-        # Mostrar frame del experimento
-        aspect_ratio = exp_width / exp_height
+        # Mostrar frame del experimento (con escalado y centrado)
+        aspect_ratio = stim_width / stim_height
         new_height = screen_height
         new_width = int(new_height * aspect_ratio)
         
@@ -390,23 +384,134 @@ def run_experiment_iteration(cap_experiment, exp_fps, nombre_persona, numero_int
         # Check rápido de tecla
         key = cv2.waitKey(1) & 0xFF
         if key == ord('q'):
-            print(f"[INTENTO {numero_intento}] Detenido manualmente.")
+            print(f"[{stim_name} Intento {numero_intento}] Detenido manually.")
             recording_active = False
             return False
     
     # Detener grabación INMEDIATAMENTE
     print(f"\n{'🛑'*35}")
-    print(f"   FINALIZANDO INTENTO {numero_intento}")
+    print(f"   FINALIZANDO {stim_name.upper()} (Intento {numero_intento})")
     print(f"{'🛑'*35}\n")
     
     recording_active = False
     
     # Esperar a que el worker termine (con timeout)
     if not recording_stopped.wait(timeout=2.0):
-        print(f"[INTENTO {numero_intento}] ⚠️  Timeout esperando finalización de grabación")
+        print(f"[{stim_name} Intento {numero_intento}] ⚠️  Timeout esperando finalización de grabación")
     
-    print(f"[INTENTO {numero_intento}] ✓ Completado\n")
+    print(f"[{stim_name} Intento {numero_intento}] ✓ Completado\n")
     return True
+
+
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# --- ¡NUEVA FUNCIÓN! ---
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+def run_live_calibration(window_name, save_path, nombre_persona, numero_intento):
+    """
+    Genera los 5 puntos de calibración en vivo usando OpenCV
+    y graba la webcam al mismo tiempo.
+    """
+    global recording_active
+
+    print(f"\n[{'C'*35}]")
+    print(f"   INICIANDO CALIBRACIÓN EN VIVO (Intento {numero_intento})")
+    print(f"[{'C'*35}]\n")
+
+    # --- 1. Definir Puntos y Tiempos ---
+    # Coordenadas "Ground Truth" (basadas en tu script Crear_animaciones.py)
+    cell_width = screen_width // 3
+    cell_height = screen_height // 3
+    pos_top_left = (cell_width // 2, cell_height // 2) # (320, 180)
+    pos_top_right = (2 * cell_width + cell_width // 2, cell_height // 2) # (1600, 180)
+    pos_bottom_left = (cell_width // 2, 2 * cell_height + cell_height // 2) # (320, 900)
+    pos_bottom_right = (2 * cell_width + cell_width // 2, 2 * cell_height + cell_height // 2) # (1600, 900)
+    pos_center = (cell_width + cell_width // 2, cell_height + cell_height // 2) # (960, 540)
+    
+    # Secuencia de puntos (repetida dos veces)
+    pixel_sequence = [
+        pos_top_left, pos_top_right, pos_bottom_left, pos_bottom_right, pos_center,
+        pos_top_left, pos_top_right, pos_bottom_left, pos_bottom_right, pos_center
+    ]
+    fixation_duration_ms = 2000 # 2 segundos por punto
+
+    # --- 2. Preparar Grabación ---
+    stim_name = "calibracion_en_vivo"
+    output_filename = f"{nombre_persona}_{stim_name}_intento_{numero_intento}.mp4"
+    output_video_path = os.path.join(save_path, output_filename)
+    
+    if not prepare_video_writer(output_video_path, cam_width, cam_height):
+        print(f"[{stim_name} Intento {numero_intento}] ❌ Error al preparar grabación.")
+        return False
+
+    # --- 3. Cuenta regresiva ---
+    if numero_intento == "1": # Mostrar solo la primera vez
+        show_countdown("Experiment Video", "Paso 1: Calibracion", 3000)
+    show_number_countdown("Experiment Video")
+    
+    # "Comenzando..."
+    countdown_frame = np.zeros((screen_height, screen_width, 3), dtype=np.uint8)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 5
+    font_thickness = 10
+    text = "Comenzando..."
+    text_size = cv2.getTextSize(text, font, font_scale, font_thickness)[0]
+    text_x = (screen_width - text_size[0]) // 2
+    text_y = (screen_height + text_size[1]) // 2
+    cv2.putText(countdown_frame, text, (text_x, text_y), font, 
+                font_scale, (255, 255, 255), font_thickness, cv2.LINE_AA)
+    cv2.imshow("Experiment Video", countdown_frame)
+    cv2.waitKey(1000)
+
+    # --- 4. Iniciar Grabación y Bucle ---
+    purged = purge_frame_queue()
+    print(f"[{stim_name} Intento {numero_intento}] Cola purgada ({purged} frames)")
+    time.sleep(0.1)
+
+    print(f"\n{'⚡'*35}")
+    print(f"   ¡INICIANDO CALIBRACIÓN (Intento {numero_intento})!")
+    print(f"{'⚡'*35}\n")
+    
+    recording_active = True
+    start_recording.set()
+    time.sleep(0.05)
+    
+    frame_base = np.zeros((screen_height, screen_width, 3), dtype=np.uint8)
+    
+    for i, point_coords in enumerate(pixel_sequence):
+        print(f"[CALIBRACIÓN] Mostrando punto {i+1}/{len(pixel_sequence)} en {point_coords}")
+        frame_base.fill(0) # Fondo negro
+        cv2.circle(frame_base, point_coords, 30, (0, 0, 255), -1) # Círculo rojo
+        
+        start_time = time.time()
+        while (time.time() - start_time) < (fixation_duration_ms / 1000.0):
+            cv2.imshow("Experiment Video", frame_base)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                print(f"[{stim_name} Intento {numero_intento}] Detenido manualmente.")
+                recording_active = False # ¡Importante! Detener la grabación
+                return False # Salir de la función
+        
+        if not recording_active: # Doble chequeo si 'q' fue presionada
+            break
+    
+    # --- 5. Finalizar Grabación ---
+    print(f"\n{'🛑'*35}")
+    print(f"   FINALIZANDO CALIBRACIÓN (Intento {numero_intento})")
+    print(f"{'🛑'*35}\n")
+    
+    recording_active = False
+    if not recording_stopped.wait(timeout=2.0):
+        print(f"[{stim_name} Intento {numero_intento}] ⚠️  Timeout esperando finalización")
+    
+    print(f"[{stim_name} Intento {numero_intento}] ✓ Completado\n")
+    
+    # Mostrar pantalla en negro
+    frame_base.fill(0)
+    cv2.imshow("Experiment Video", frame_base)
+    cv2.waitKey(1000) # Pausa de 1s
+    
+    return True
+# --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
 
 def run_all_experiments(nombre_persona, total_iteraciones):
@@ -417,14 +522,14 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     print("   INICIANDO SESIÓN DE EXPERIMENTOS")
     print("="*70)
     
-    # Configurar rutas
-    save_path = f"/home/vit/Documentos/Tesis3D/Videos/Experimento_{EXP_NUM}/{nombre_persona}"
-    experiment_video_path = f"/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos/experimento_{EXP_NUM}.mp4"
-    
+    # Configurar ruta de guardado
+    save_path = os.path.join(BASE_SAVE_PATH, f"Experimento_{EXP_NUM}", nombre_persona)
     if not os.path.exists(save_path):
         os.makedirs(save_path)
+        print(f"[SESIÓN] Creada carpeta de guardado: {save_path}")
     
-    # Cargar video del experimento
+    # --- Cargar Video de Estímulo PRINCIPAL ---
+    experiment_video_path = os.path.join(STIMULUS_VIDEO_PATH, f"experimento_{EXP_NUM}.mp4")
     cap_experiment = cv2.VideoCapture(experiment_video_path)
     if not cap_experiment.isOpened():
         print(f"❌ Error: No se pudo abrir {experiment_video_path}")
@@ -433,23 +538,20 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     exp_width = int(cap_experiment.get(cv2.CAP_PROP_FRAME_WIDTH))
     exp_height = int(cap_experiment.get(cv2.CAP_PROP_FRAME_HEIGHT))
     exp_fps = cap_experiment.get(cv2.CAP_PROP_FPS)
-    if exp_fps <= 0:
-        exp_fps = 30.0
-    
+    if exp_fps <= 0: exp_fps = 30.0
     total_frames = int(cap_experiment.get(cv2.CAP_PROP_FRAME_COUNT))
     exp_duration = total_frames / exp_fps
     
-    print(f"[VIDEO] Experimento: {exp_width}x{exp_height} @ {exp_fps} FPS")
-    print(f"[VIDEO] Duración: {exp_duration:.2f}s ({total_frames} frames)")
-    print(f"[VIDEO] Grabación webcam: {OUTPUT_FPS} FPS")
+    print(f"[VIDEO] Experimento Principal: {experiment_video_path}")
+    print(f"[VIDEO]   -> {exp_width}x{exp_height} @ {exp_fps} FPS, Duración: {exp_duration:.2f}s")
     
-    # Verificar compatibilidad de FPS
-    if OUTPUT_FPS != 30:
-        print(f"[VIDEO] ⚠️  ADVERTENCIA: OUTPUT_FPS={OUTPUT_FPS} pero la webcam está configurada a 30 FPS")
-        print("[VIDEO] ⚠️  Se recomienda OUTPUT_FPS=30 para sincronización perfecta")
+    # --- ¡MODIFICADO! Ya no se carga el video de calibración ---
+    if EXP_NUM == 3:
+        print("[SESIÓN] EXP_NUM=3 detectado. Se ejecutará CALIBRACIÓN EN VIVO antes de la espiral.")
+
     
     # ==================================================================
-    # INICIALIZACIÓN ÚNICA - Se hace UNA SOLA VEZ
+    # INICIALIZACIÓN ÚNICA (Webcam y Recorder)
     # ==================================================================
     
     print("\n" + "-"*70)
@@ -459,7 +561,8 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     # 1. Iniciar captura continua
     capture_thread = Thread(target=capture_webcam_stream, daemon=True)
     capture_thread.start()
-    time.sleep(1.5)
+    print("[SISTEMA] Esperando que la webcam se estabilice...")
+    time.sleep(2.0) # Dar tiempo a la webcam para que inicie y se obtenga la resolución
     
     if not capture_active:
         print("❌ Error: La webcam no pudo iniciarse.")
@@ -487,20 +590,58 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     # ==================================================================
     
     for i in range(1, total_iteraciones + 1):
-        success = run_experiment_iteration(
-            cap_experiment, exp_fps, nombre_persona, str(i),
-            exp_width, exp_height, save_path, 
-            is_first_iteration=(i == 1),
-            total_frames=total_frames
+        
+        # Mostrar "Prepárate" si no es la primera iteración
+        if i > 1:
+            show_countdown("Experiment Video", f"Prepárate - Intento {i}", 3000)
+
+        # --- (A) PASO DE CALIBRACIÓN (Solo si es EXP_NUM 3) ---
+        # --- ¡MODIFICADO! Llama a la nueva función en vivo ---
+        if EXP_NUM == 3:
+            success_cal = run_live_calibration(
+                window_name="Experiment Video",
+                save_path=save_path,
+                nombre_persona=nombre_persona,
+                numero_intento=str(i)
+            )
+            
+            if not success_cal:
+                print(f"\n⚠️  Sesión interrumpida en CALIBRACIÓN (intento {i})")
+                break # Salir del bucle de iteraciones
+            
+            # Pausa breve
+            show_countdown("Experiment Video", "Calibracion Completa", 1500)
+        
+        # --- (B) PASO DE EXPERIMENTO (Siempre se ejecuta) ---
+        print("\n" + "*"*70)
+        print(f"   INICIANDO EXPERIMENTO {EXP_NUM} (Intento {i}/{total_iteraciones})")
+        print("*"*70)
+        
+        # Mostrar "Prepárate" específico
+        if EXP_NUM == 3:
+             show_countdown("Experiment Video", "Paso 2: Espiral", 3000)
+        elif i == 1: # Si es el primer intento (y no es exp 3)
+             show_countdown("Experiment Video", "Prepárate", 3000)
+
+        
+        success_exp = run_experiment_iteration(
+            cap_stimulus=cap_experiment,
+            stim_fps=exp_fps,
+            stim_width=exp_width,
+            stim_height=exp_height,
+            total_frames=total_frames,
+            stim_name=f"experimento_{EXP_NUM}", # <--- Nombre de archivo
+            nombre_persona=nombre_persona,
+            numero_intento=str(i),
+            save_path=save_path
         )
         
-        if not success:
-            print(f"\n⚠️  Sesión interrumpida en el intento {i}")
-            break
+        if not success_exp:
+            print(f"\n⚠️  Sesión interrumpida en EXPERIMENTO (intento {i})")
+            break # Salir del bucle de iteraciones
         
-        # Pausa entre iteraciones (excepto en la última)
-        if i < total_iteraciones:
-            time.sleep(1)
+        print(f"\n--- Fin del Intento {i} ---")
+
     
     # ==================================================================
     # LIMPIEZA FINAL
@@ -512,13 +653,14 @@ def run_all_experiments(nombre_persona, total_iteraciones):
     
     recording_active = False
     capture_active = False
-    start_recording.set()  # Liberar worker si está esperando
+    start_recording.set()   # Liberar worker si está esperando
     
     print("[CLEANUP] Esperando finalización de hilos...")
     capture_thread.join(timeout=2.0)
     recording_thread.join(timeout=3.0)
     
     cap_experiment.release()
+    # Ya no hay cap_calibration que liberar
     cv2.destroyAllWindows()
     
     print("\n" + "✅"*35)
@@ -533,7 +675,7 @@ def run_all_experiments(nombre_persona, total_iteraciones):
 if __name__ == "__main__":
     
     print("\n" + "="*70)
-    print("   SISTEMA DE EXPERIMENTOS - SINCRONIZACIÓN MEJORADA")
+    print("   SISTEMA DE EXPERIMENTOS - (v2.1 CON CALIBRACIÓN EN VIVO)")
     print("="*70 + "\n")
     
     nombre_persona = input("Nombre de la persona: ").strip()
@@ -550,8 +692,13 @@ if __name__ == "__main__":
 
     print("\n" + "-"*70)
     print(f"✓ Participante: {nombre_persona}")
-    print(f"✓ Iteraciones: {total_iteraciones}")
-    print(f"✓ FPS de salida: {OUTPUT_FPS}")
+    print(f"✓ Iteraciones:  {total_iteraciones}")
+    print(f"✓ Experimento:  {EXP_NUM}")
+    if EXP_NUM == 3:
+        print("✓ Modo:         ¡CALIBRACIÓN EN VIVO + ESPIRAL activado!")
+    print(f"✓ FPS Salida:   {OUTPUT_FPS}")
+    print(f"✓ Guardar en:   {os.path.join(BASE_SAVE_PATH, f'Experimento_{EXP_NUM}', nombre_persona)}")
+    print(f"✓ Leer desde:   {STIMULUS_VIDEO_PATH}")
     print("-"*70)
     
     input("\nPresiona ENTER para comenzar...")

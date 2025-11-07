@@ -15,10 +15,10 @@ import seaborn as sns
 
 # ¡SOLO EDITA ESTAS DOS LÍNEAS!
 # (1 = Experimento 9-puntos, 2 = Experimento 5-puntos)
-TIPO_EXPERIMENTO = 1 
+TIPO_EXPERIMENTO = 2 
 
 # Ruta al archivo CSV de entrada
-INPUT_CSV_PATH = "/home/vit/Documentos/Tesis3D/Data/Experimento_1/Victor_data/Victor3_intento_1_data.csv"
+INPUT_CSV_PATH = "C:\\Users\\Victor\\Documents\\Tesis3D\\Data\\Experimento_2\\Victor_data\\Victor_intento_5_data.csv"
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # --- FIN DE LA CONFIGURACIÓN ---
