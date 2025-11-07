@@ -13,7 +13,7 @@ from sklearn.cluster import KMeans # ¡NUEVO! Para la calibración robusta
 # !!! Modifica estas rutas para que coincidan con tu PC !!!
 
 # Ruta a la CARPETA que contiene los CSV de calibración (Experimento 2, 5 puntos)
-CALIBRATION_DATA_PATH = "C:\\Users\\Victor\\Documents\\Tesis3D\\Data\\Experimento_2\\Victor_data"
+CALIBRATION_DATA_PATH = "Data/Experimento_2/Sanchez_data"
 
 # Ruta al ARCHIVO CSV de la espiral que quieres analizar (Experimento 3)
 SPIRAL_DATA_PATH = "C:\\Users\\Victor\\Documents\\Tesis3D\\Data\\Experimento_3\\Victor_data\\Victor_intento_1_data.csv"

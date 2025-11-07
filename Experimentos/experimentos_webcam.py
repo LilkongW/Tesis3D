@@ -23,10 +23,10 @@ OUTPUT_FPS = 30
 # !!! Modifica estas rutas para que coincidan con tu PC !!!
 
 # Ruta base para GUARDAR los videos de la webcam
-BASE_SAVE_PATH = "C:\\Users\\Victor\\Documents\\Tesis3D\\Data" 
+BASE_SAVE_PATH = "/home/vit/Documentos/Tesis3D/Videos" 
 
 # Ruta base donde ESTÁN los videos de estímulo (los .mp4 generados)
-STIMULUS_VIDEO_PATH = "C:\\Users\\Victor\\Documents\\Tesis3D\\Videos\\Animaciones_experimentos"
+STIMULUS_VIDEO_PATH = "/home/vit/Documentos/Tesis3D/Videos/Animaciones_experimentos"
 
 # --- 3. VARIABLES GLOBALES (No tocar) ---
 frame_queue = queue.Queue(maxsize=120)

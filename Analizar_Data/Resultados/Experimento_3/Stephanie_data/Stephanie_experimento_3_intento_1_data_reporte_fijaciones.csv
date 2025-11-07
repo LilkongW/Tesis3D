@@ -1,0 +1,7 @@
+event_id,event_type,event_class,start_time_ms,end_time_ms,duration_ms,amplitude_deg,velocidad_promedio_deg_s
+f_2,fijacion,fijacion_valida,700.0,6500.0,5800.0,0.0,4.6295293582416095
+f_3,fijacion,fijacion_valida,6666.667,53100.0,46433.333,0.0,5.865907046305154
+f_5,fijacion,fijacion_valida,53433.333,58600.0,5166.667000000001,0.0,5.596804667432844
+f_6,fijacion,fijacion_valida,58733.333,62433.333,3700.0,0.0,5.506886608317866
+f_7,fijacion,fijacion_valida,62500.0,62933.333,433.3329999999987,0.0,7.96496128860308
+f_8,fijacion,fijacion_valida,63066.667,73066.667,10000.0,0.0,5.3617457529943495
