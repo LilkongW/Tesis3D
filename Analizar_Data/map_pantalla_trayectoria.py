@@ -7,7 +7,7 @@ import sys
 
 # --- 1. CONFIGURACIÓN ---
 FPS = 60.0
-OFFSET_MS = 0.0 # El mismo offset de tu 'analizador.py' para sincronizar
+OFFSET_MS = 500.0 # El mismo offset de tu 'analizador.py' para sincronizar
 
 # ¡Ruta al CSV de la espiral que queremos analizar!
 SPIRAL_CSV_PATH = "/home/vit/Documentos/Tesis3D/Data/Experimento_3/Victor_data/Victor_intento_1_data.csv"

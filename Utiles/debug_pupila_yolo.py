@@ -16,7 +16,7 @@ else: # 'posix' es para Linux, macOS, etc.
 Nombre = "Sanchez"
 # 2. Construir las rutas completas usando os.path.join
 YOLO_MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
-VIDEO_PATH = os.path.join(BASE_DIR, "Videos", "Experimento_1", Nombre, f"{Nombre}_intento_8.mp4")
+VIDEO_PATH = os.path.join(BASE_DIR, "Videos", "Experimento_1", Nombre, f"{Nombre}_intento_10.mp4")
 
 # --- ¡NUEVOS PARÁMETROS DE DEBUG! ---
 INITIAL_CONFIDENCE_X100 = 50 # (Representa 0.50)

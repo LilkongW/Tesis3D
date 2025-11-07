@@ -7,11 +7,11 @@ import os
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (240, 240) # (ancho,alto)
+    prev = (240, 260) # (ancho,alto)
 
     EXP_NUM = 3
 
-    NOMBRE= "Sanchez"
+    NOMBRE= "Victor"
 
     # Ruta de videos - compatible con Windows y Linux
     VIDEO_FOLDER_PATH = os.path.join("Videos", f"Experimento_{EXP_NUM}", NOMBRE)

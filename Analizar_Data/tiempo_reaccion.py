@@ -16,7 +16,7 @@ OUTPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data/ana
 # Parámetros de análisis
 VENTANA_BUSQUEDA_ADELANTE_MS = 1000.0  # Buscar fijación dentro de 1000ms DESPUÉS del estímulo
 VENTANA_BUSQUEDA_ATRAS_MS = 1000.0      # Buscar fijación hasta 350ms ANTES del estímulo (para anticipaciones)
-OFFSET_MS = 0.0  # El mismo offset usado en el análisis original
+OFFSET_MS = 500.0  # El mismo offset usado en el análisis original
 
 # Umbrales de clasificación
 UMBRAL_ANTICIPACION_MS = -50.0     # Menos de -50ms = anticipación clara

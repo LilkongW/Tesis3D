@@ -7,13 +7,11 @@ import time
 import csv
 from ultralytics import YOLO  # --- NUEVO --- Importar YOLO
 import os 
+
 # --- PARÁMETROS DE FILTRADO Y PREPROCESAMIENTO ---
-# (Se mantienen los parámetros de CLAHE y Gaussian para el preproc. del IRIS)
 GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0
-# --- PARÁMETROS DE PUPILA ANTIGUOS (ELIMINADOS) ---
-# FIXED_THRESHOLD_VALUE = 50  (Eliminado, ahora se usa Otsu en el ROI)
-# MORPH_KERNEL_SIZE = 5       (Eliminado, no se usa en el pipeline de YOLO)
+
 # ------------------------------------------
 # 1. Definir la ruta base según el sistema operativo
 if os.name == 'nt': # 'nt' es el identificador para Windows
@@ -24,7 +22,17 @@ else: # 'posix' es para Linux, macOS, etc.
 # --- <<<--- ¡NUEVOS PARÁMETROS DE IA! ---
 # ⚠️ ¡DEBES ACTUALIZAR ESTA RUTA!
 YOLO_MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
-YOLO_MIN_CONFIDENCE = 0.5  # Umbral de confianza (0.0 a 1.0)
+# Este umbral ahora es SÓLO VISUAL (para colorear el texto)
+YOLO_MIN_CONFIDENCE = 0.5  
+YOLO_ROI_EXPANSION_PX = 5  # Expansión del Bbox
+# --- <<<--- ---
+
+# --- <<<--- ¡MODIFICACIÓN! (Volvemos a Umbral Fijo) ---
+PUPIL_FIXED_THRESHOLD = 14        # <-- Puedes ajustar este valor manualmente
+# --- <<<--- ---
+
+# --- <<<--- ¡NUEVA MODIFICACIÓN 4: RUTA DE RE-ENTRENAMIENTO! ---
+RETRAIN_FRAMES_DIR = os.path.join(BASE_DIR, "frames_para_retrain")
 # --- <<<--- ---
 
 # --- PARÁMETRO DE ESTABILIDAD DEL MODELO ---
@@ -45,7 +53,7 @@ PUPIL_SCALE_END = 6
 NUM_ELLIPTICAL_STEPS = 100
 # --- <<<--- ---
 
-# --- PARÁMETROS DE FILTRADO DE IRIS (SIN CAMBIOS) ---
+# --- PARÁMETROS de FILTRADO DE IRIS (SIN CAMBIOS) ---
 MIN_NORMALIZED_RADIUS = 1.5
 MAX_NORMALIZED_RADIUS = 5
 ROBUST_FILTER_THRESHOLD = 2
@@ -74,6 +82,12 @@ try:
     print(f"Cargando modelo YOLO desde: {YOLO_MODEL_PATH}")
     model = YOLO(YOLO_MODEL_PATH)
     print("Modelo YOLO cargado exitosamente.")
+    
+    # --- <<<--- ¡NUEVA MODIFICACIÓN 4: CREAR CARPETA! ---
+    os.makedirs(RETRAIN_FRAMES_DIR, exist_ok=True)
+    print(f"Directorio de re-entrenamiento asegurado en: {RETRAIN_FRAMES_DIR}")
+    # --- <<<--- ---
+    
 except Exception as e:
     print(f"Error CRÍTICO al cargar el modelo YOLO: {e}")
     print("El script no podrá detectar la pupila.")
@@ -136,51 +150,67 @@ def process_frames(frame, gray_frame_clahe):
     global smoothed_iris_ellipse
     global model  # --- NUEVO --- Acceso al modelo global
 
-    # --- data_dict actualizado (sin cambios) ---
+    # --- data_dict actualizado (con nueva columna) ---
     data_dict = {
         "valid_deteccion": False, "sphere_center_x": None, "sphere_center_y": None, "sphere_center_z": None,
         "pupil_center_x": None, "pupil_center_y": None,
         "gaze_x": None, "gaze_y": None, "gaze_z": None,
         "ellipse_width": None, "ellipse_height": None, "ellipse_angle": None,
-        "contour_area": None
+        "contour_area": None,
+        "yolo_confidence": 0.0 # <-- MODIFICACIÓN 1 (CSV)
     }
     
     h_frame, w_frame = frame.shape[:2]
-
+    
     # --- INICIO: NUEVA LÓGICA DE DETECCIÓN (YOLO + ROI) ---
 
+    max_conf_display = 0.0 # <-- MODIFICACIÓN 1: Inicializar confianza para display
     final_rotated_rect = None
     center_x, center_y = None, None
     is_detection_temporally_stable = False
     best_pupil_contour = None # Contorno en coordenadas ABSOLUTAS
     best_contour_area = 0.0
+    expanded_bbox = (0, 0, w_frame, h_frame) # Default: full frame
 
     if model is None:
         print("Error: El modelo YOLO no está cargado. Saltando detección.")
         # El resto de la función fallará con gracia
     else:
         # 1. Ejecutar YOLO para encontrar el ROI
-        # Usamos 'frame' (el frame original), no el 'gray_frame_clahe'
         results = model.track(frame, persist=True, verbose=False)
         
         best_box = None
-        max_conf = YOLO_MIN_CONFIDENCE
+        max_conf = 0.0 # <-- MODIFICACIÓN 1: Empezar en 0
 
-        # 2. Encontrar la detección con mayor confianza
+        # 2. Encontrar la detección con mayor confianza (independiente del umbral)
         if results[0].boxes:
             for box in results[0].boxes:
                 if box.conf[0] > max_conf:
                     max_conf = box.conf[0]
                     best_box = box
         
-        # 3. Si se detecta un ROI, procesarlo
-        if best_box is not None:
+        max_conf_display = max_conf # <-- MODIFICACIÓN 1: Guardar la confianza MÁXIMA para mostrar
+        
+        # --- <<<--- INICIO: MODIFICACIÓN CLAVE (Eliminar filtro de confianza) ---
+        # 3. Si se detecta un ROI (CON CUALQUIER CONFIANZA), procesarlo
+        # if best_box is not None and max_conf >= YOLO_MIN_CONFIDENCE: <-- LÍNEA ANTIGUA
+        if best_box is not None: # <-- LÍNEA NUEVA
+        # --- <<<--- FIN: MODIFICACIÓN CLAVE ---
             # 3a. Obtener el ROI
             x1_raw, y1_raw, x2_raw, y2_raw = best_box.xyxy[0].cpu().numpy().astype(int)
             
+            # --- Expansión de Bbox (de la iteración anterior) ---
+            x1_raw_exp = x1_raw - YOLO_ROI_EXPANSION_PX
+            y1_raw_exp = y1_raw - YOLO_ROI_EXPANSION_PX
+            x2_raw_exp = x2_raw + YOLO_ROI_EXPANSION_PX
+            y2_raw_exp = y2_raw + YOLO_ROI_EXPANSION_PX
+            
             # Asegurar que las coordenadas estén dentro de los límites del frame
-            x1, y1 = max(0, x1_raw), max(0, y1_raw)
-            x2, y2 = min(w_frame, x2_raw), min(h_frame, y2_raw)
+            x1, y1 = max(0, x1_raw_exp), max(0, y1_raw_exp)
+            x2, y2 = min(w_frame, x2_raw_exp), min(h_frame, y2_raw_exp)
+            
+            # Guardar el Bbox expandido y clampado para la Petición 1
+            expanded_bbox = (x1, y1, x2, y2) 
             
             if x1 < x2 and y1 < y2:
                 # Recortar el ROI del frame original
@@ -188,8 +218,11 @@ def process_frames(frame, gray_frame_clahe):
                 
                 # 3b. Binarización del ROI (Usando la lógica del script de video)
                 gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-                # Aplicar umbral de Otsu inverso (asume pupila oscura)
-                _, binary_roi = cv2.threshold(gray_roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+                
+                # --- INICIO DE MODIFICACIÓN: Binarización Manual ---
+                # Volvemos a la binarización fija manual
+                _, binary_roi = cv2.threshold(gray_roi, PUPIL_FIXED_THRESHOLD, 255, cv2.THRESH_BINARY_INV)
+                # --- FIN DE MODIFICACIÓN ---
                 
                 # 3c. Encontrar Contorno en el ROI
                 contours_roi, _ = cv2.findContours(binary_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -211,8 +244,6 @@ def process_frames(frame, gray_frame_clahe):
     if best_pupil_contour is not None: 
         data_dict["contour_area"] = best_contour_area 
         
-        # --- (El resto de la función es idéntica a tu original) ---
-        
         optimized_contour = optimize_contours_by_angle([best_pupil_contour])
         ellipse = None
         try:
@@ -222,15 +253,20 @@ def process_frames(frame, gray_frame_clahe):
                 ellipse = cv2.fitEllipse(best_pupil_contour)
         except cv2.error: ellipse = None
 
+        # --- <<<--- INICIO: MODIFICACIÓN CLAVE (Eliminar validación de contención) ---
+        # (Se eliminó el bloque 'is_contained' que comprobaba los 4 puntos)
         if ellipse is not None:
-            final_rotated_rect = ellipse
+            final_rotated_rect = ellipse # <-- Se acepta la elipse si cv2.fitEllipse tuvo éxito
+        # --- <<<--- FIN: MODIFICACIÓN CLAVE ---
+
+        if final_rotated_rect is not None: # <-- Comprobar 'final_rotated_rect' en lugar de 'ellipse'
+            # Esta lógica ahora solo se ejecuta si la elipse fue válida Y contenida
             center_x_raw, center_y_raw = map(int, final_rotated_rect[0])
             stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=2)
             center_x, center_y = stable_pupil_center if stable_pupil_center else (center_x_raw, center_y_raw)
             
             # --- <<<--- INICIO: LÓGICA DE DETECCIÓN DE IRIS (SIN CAMBIOS) ---
             # ... (Esta sección completa se copia y pega tal cual) ...
-            # ... (Usa 'final_rotated_rect' y 'gray_frame_clahe', lo cual es correcto) ...
             
             iris_edge_points = []
             cleaned_points = []
@@ -368,7 +404,7 @@ def process_frames(frame, gray_frame_clahe):
                     frames_since_last_good_detection = 0
     
     else:
-        # Esto se ejecuta si el método de YOLO NO encontró un contorno
+        # Esto se ejecuta si (YOLO no encontró contorno) O (elipse falló ajuste) O (elipse fuera de ROI)
         frames_since_last_good_detection += 1
         smoothed_iris_ellipse = ((0, 0), (0, 0), 0) # Resetear el iris si se pierde la pupila
 
@@ -388,10 +424,17 @@ def process_frames(frame, gray_frame_clahe):
 
     if is_detection_temporally_stable:
         dist_from_sphere_center = math.hypot(center_x - model_center_average[0],
-                                              center_y - model_center_average[1])
+                                             center_y - model_center_average[1])
         if dist_from_sphere_center <= max_observed_distance:
             ray_lines.append(final_rotated_rect)
             if len(ray_lines) > max_rays: ray_lines.pop(0)
+            
+            # Dibujar el Bbox expandido (para depuración)
+            (bx1, by1, bx2, by2) = expanded_bbox
+            # Dibuja el ROI solo si la detección fue válida
+            if best_box is not None:
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), (255, 0, 0), 1) # Azul para el ROI
+            
             cv2.ellipse(frame, final_rotated_rect, (0, 255, 255), 2)
             cv2.line(frame, model_center_average, (center_x, center_y), (255, 150, 50), 2)
             dx = center_x - model_center_average[0]; dy = center_y - model_center_average[1]
@@ -415,7 +458,30 @@ def process_frames(frame, gray_frame_clahe):
     if smoothed_iris_ellipse[1][0] > 0 and smoothed_iris_ellipse[1][1] > 0:
         cv2.ellipse(frame, smoothed_iris_ellipse, (255, 0, 255), 2)
     
+    # --- <<<--- INICIO: MODIFICACIONES DE VISUALIZACIÓN ---
+    
+    # MODIFICACIÓN 1: Mostrar Confianza
+    conf_text = f"Conf: {max_conf_display:.2f}"
+    # Color verde si supera el umbral, rojo si no
+    conf_color = (0, 255, 0) if max_conf_display >= YOLO_MIN_CONFIDENCE else (0, 0, 255)
+    #cv2.putText(frame, conf_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, conf_color, 2)
+    
+    # MODIFICACIÓN 2: Mostrar Estado de Detección Final
+    if data_dict["valid_deteccion"]:
+        status_text = "PUPILA DETECTADA"
+        status_color = (0, 255, 0) # Verde
+    else:
+        status_text = "BUSCANDO..."
+        status_color = (0, 0, 255) # Rojo
+    cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
+    
+    # --- <<<--- FIN: MODIFICACIONES DE VISUALIZACIÓN ---
+    
     cv2.imshow("Frame with Ellipse and Rays", frame)
+    
+    # MODIFICACIÓN 1 (CSV): Añadir confianza al dict de datos
+    data_dict["yolo_confidence"] = max_conf_display
+    
     return data_dict
 
 # --- OTRAS FUNCIONES UTILITARIAS (SIN CAMBIOS) ---
@@ -502,26 +568,27 @@ def compute_gaze_vector(x_pupil, y_pupil, x_sphere, y_sphere, max_radius_pixels,
         fallback_center = np.array([0.0, 0.0, 0.0]); fallback_gaze = np.array([0.0, 0.0, -1.0])
         return fallback_center, fallback_gaze
 
-# --- FUNCIÓN DE PROCESAMIENTO PRINCIPAL (SIN CAMBIOS) ---
-def process_frame(frame):
-    frame = crop_to_aspect_ratio(frame)
-    # Esta parte se mantiene igual, ya que 'gray_frame_clahe'
-    # sigue siendo necesario para la búsqueda del IRIS.
-    gray_frame_original = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+# --- FUNCIÓN DE PROCESAMIENTO PRINCIPAL (MODIFICADA) ---
+def process_frame(frame_recortado):
+    # --- MODIFICACIÓN 4: 'frame' ya viene recortado ---
+    # frame = crop_to_aspect_ratio(frame) # <-- Esta línea se movió a la función 'process_video...'
+    
+    # 'frame_recortado' se pasará a process_frames, que dibujará sobre él
+    gray_frame_original = cv2.cvtColor(frame_recortado, cv2.COLOR_BGR2GRAY)
     gray_frame_blurred = cv2.GaussianBlur(gray_frame_original, GAUSSIAN_KERNEL_SIZE, 0)
     clahe = cv2.createCLAHE(clipLimit=CLAHE_CLIP_LIMIT, tileGridSize=(8, 8))
     gray_frame_clahe = clahe.apply(gray_frame_blurred)
     
-    # 'process_frames' ahora usa 'frame' para YOLO y 'gray_frame_clahe' para el iris
-    data_dict = process_frames(frame, gray_frame_clahe)
+    # 'process_frames' recibe el frame recortado y dibuja en él
+    data_dict = process_frames(frame_recortado, gray_frame_clahe) 
     return data_dict
 
-# --- FUNCIÓN DE PROCESAMIENTO DE VIDEO (SIN CAMBIOS) ---
+# --- FUNCIÓN DE PROCESAMIENTO DE VIDEO (MODIFICADA) ---
 def process_video_from_path(video_path, video_name, csv_path,prev):
-    # ... (Sin cambios) ...
+    # ... (Reset global sin cambios) ...
     global ray_lines, model_centers, stable_pupil_centers, prev_model_center_avg
     global last_known_pupil_center, frames_since_last_good_detection
-    global smoothed_iris_ellipse
+    global smoothed_iris_ellipse, RETRAIN_FRAMES_DIR # <-- MOD 4: Acceso a la variable global
     ray_lines, model_centers, stable_pupil_centers = [], [], []
     prev_model_center_avg = prev
     last_known_pupil_center = None
@@ -536,13 +603,15 @@ def process_video_from_path(video_path, video_name, csv_path,prev):
     fps = cap.get(cv2.CAP_PROP_FPS); fps = fps if fps > 0 else 30.0
     frame_delay = int(1000 / fps); frame_counter = 0
     print(f"Processing video: {video_path}\nSaving CSV data to: {csv_path}\nPress 'q' to quit, 'space' to pause")
+    
+    # --- MODIFICACIÓN 1 (CSV): Añadir cabecera ---
     csv_header = [
         "video_name", "frame_number", "timestamp_ms", "valid_deteccion",
         "sphere_center_x", "sphere_center_y", "sphere_center_z",
         "pupil_center_x", "pupil_center_y",
         "gaze_x", "gaze_y", "gaze_z",
         "ellipse_width", "ellipse_height", "ellipse_angle",
-        "contour_area"
+        "contour_area", "yolo_confidence" # <-- NUEVA COLUMNA
     ]
     try:
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
@@ -553,12 +622,39 @@ def process_video_from_path(video_path, video_name, csv_path,prev):
                 ret, frame = cap.read()
                 if not ret: break
                 frame_counter += 1
-                timestamp_ms = (frame_counter / fps) * 100.0
-                data = process_frame(frame)
+                
+                # --- <<<--- ¡CORRECCIÓN DE BUG CRÍTICO! ---
+                timestamp_ms = (frame_counter / fps) * 1000.0 # <-- Corregido de 100.0 a 1000.0
+                # --- <<<--- ---
+                
+                # --- <<<--- INICIO: MODIFICACIÓN 4 ---
+                # Recortar el frame aquí, ANTES de pasarlo a procesar
+                # 'frame_recortado_limpio' es la imagen exacta que ve el modelo
+                frame_recortado_limpio = crop_to_aspect_ratio(frame)
+                
+                # Pasamos una copia para que la función de dibujado no afecte
+                # al frame que podríamos querer guardar.
+                data = process_frame(frame_recortado_limpio.copy())
+                
+                # Comprobar si la detección falló
+                if not data.get("valid_deteccion", False):
+                    # Crear un nombre de archivo único
+                    frame_filename = f"{video_name}_ts_{timestamp_ms:.0f}.jpg"
+                    save_path = os.path.join(RETRAIN_FRAMES_DIR, frame_filename)
+                    
+                    try:
+                        # Guardar el frame limpio y recortado
+                        cv2.imwrite(save_path, frame_recortado_limpio) 
+                    except Exception as e:
+                        print(f"Advertencia: No se pudo guardar el frame de re-entrenamiento en {save_path}. Error: {e}")
+                # --- <<<--- FIN: MODIFICACIÓN 4 ---
+
                 if data.get("valid_deteccion") and data.get("contour_area") is not None:
                     current_area = data["contour_area"]
                     min_area_found = min(min_area_found, current_area)
                     max_area_found = max(max_area_found, current_area)
+                    
+                # --- MODIFICACIÓN 1 (CSV): Añadir dato a la fila ---
                 row = [
                     video_name, frame_counter, f"{timestamp_ms:.3f}", data.get("valid_deteccion", False),
                     f"{data.get('sphere_center_x', ''):.3f}" if data.get('sphere_center_x') is not None else '',
@@ -572,7 +668,8 @@ def process_video_from_path(video_path, video_name, csv_path,prev):
                     f"{data.get('ellipse_width', ''):.3f}" if data.get('ellipse_width') is not None else '',
                     f"{data.get('ellipse_height', ''):.3f}" if data.get('ellipse_height') is not None else '',
                     f"{data.get('ellipse_angle', ''):.3f}" if data.get('ellipse_angle') is not None else '',
-                    f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else ''
+                    f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else '',
+                    f"{data.get('yolo_confidence', 0.0):.3f}" # <-- NUEVO DATO
                 ]
                 writer.writerow(row)
                 processing_duration_ms = (time.time() - start_time) * 1000
