@@ -316,9 +316,9 @@ def generar_visualizacion_combinada(df_raw, events_report, umbrales, output_file
     event_color_map = {'fijacion_valida': 'green', 'sacadico': 'red', 'parpadeo': 'gray'}
 
     # Subplot 1: Posición
-    ax1.plot(df_raw['timestamp_s'], df_raw['gaze_x'], label='dirección_x', alpha=0.8)
-    ax1.plot(df_raw['timestamp_s'], df_raw['gaze_y'], label='dirección_y', linestyle='--', alpha=0.8)
-    ax1.plot(df_raw['timestamp_s'], df_raw['gaze_z'], label='dirección_z (adelante)', linestyle=':', alpha=0.6)
+    ax1.plot(df_raw['timestamp_s'], df_raw['gaze_x'], label='Componente x', alpha=0.8)
+    ax1.plot(df_raw['timestamp_s'], df_raw['gaze_y'], label='Componente y', linestyle='--', alpha=0.8)
+    ax1.plot(df_raw['timestamp_s'], df_raw['gaze_z'], label='Componente z', linestyle=':', alpha=0.6)
     ax1.set_title(f"Posición del Vector de Mirada 3D/n(Archivo: {os.path.basename(output_file)})")
     ax1.set_ylabel('Componente del Vector')
     ax1.grid(True)
