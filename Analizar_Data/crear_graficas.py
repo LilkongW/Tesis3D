@@ -7,7 +7,7 @@ import os
 import glob 
 
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
-NOMBRE = "Majo"
+NOMBRE = "Raul"
 # Directorio de ENTRADA
 EXP_NUM = 1 # <--- ESTA VARIABLE AHORA CONTROLA LOS ESTÍMULOS
 INPUT_DIR = fr"Data/Experimento_{EXP_NUM}/{NOMBRE}_data"
@@ -91,6 +91,43 @@ def get_stimulus_events_exp2(offset_ms=0):
             'end_time_ms': anim_end_time + offset_ms
         })
     return eventos_estimulo
+
+# --- NUEVA FUNCIÓN PARA CALCULAR PROMEDIOS ENTRE ESTÍMULOS ---
+def calcular_promedios_entre_estimulos(df_completo, eventos_estimulo):
+    """
+    Calcula la velocidad y aceleración promedio entre cada par de estímulos consecutivos.
+    Retorna el promedio de todos los intervalos entre estímulos.
+    """
+    if not eventos_estimulo or len(eventos_estimulo) < 2:
+        return 0.0, 0.0
+    
+    velocidades_entre_estimulos = []
+    aceleraciones_entre_estimulos = []
+    
+    for i in range(len(eventos_estimulo) - 1):
+        # Tiempo final del estímulo actual
+        end_time_current = eventos_estimulo[i]['end_time_ms']
+        # Tiempo inicial del siguiente estímulo
+        start_time_next = eventos_estimulo[i + 1]['start_time_ms']
+        
+        # Filtrar datos entre el fin del estímulo actual y el inicio del siguiente
+        mask_entre_estimulos = (df_completo['timestamp_ms'] >= end_time_current) & \
+                              (df_completo['timestamp_ms'] <= start_time_next)
+        
+        df_entre_estimulos = df_completo[mask_entre_estimulos]
+        
+        if not df_entre_estimulos.empty:
+            vel_promedio = df_entre_estimulos['velocity_angular_filtered'].mean()
+            acel_promedio = df_entre_estimulos['acceleration_angular_filtered'].mean()
+            
+            velocidades_entre_estimulos.append(vel_promedio)
+            aceleraciones_entre_estimulos.append(acel_promedio)
+    
+    # Calcular promedio de todos los intervalos entre estímulos
+    velocidad_promedio_entre = np.mean(velocidades_entre_estimulos) if velocidades_entre_estimulos else 0.0
+    aceleracion_promedio_entre = np.mean(aceleraciones_entre_estimulos) if aceleraciones_entre_estimulos else 0.0
+    
+    return velocidad_promedio_entre, aceleracion_promedio_entre
 
 # --- FUNCIONES DE CÁLCULO (Robustecida) ---
 def calcular_velocidad_y_aceleracion(df):
@@ -936,12 +973,20 @@ def main():
             print(traceback.format_exc())
             continue
 
-        # 8. Recopilar datos para el reporte agregado
+        # 8. Recopilar datos para el reporte agregado (MODIFICADO: AGREGADAS LAS NUEVAS MÉTRICAS)
         try:
             duracion_total_seg = (df_completo['timestamp_s'].iloc[-1] - df_completo['timestamp_s'].iloc[0])
             conteo_fijaciones = len(fijaciones_df)
             conteo_sacadicos = len(sacadicos_df)
             conteo_parpadeos = len(parpadeos_df)
+            
+            # --- MÉTRICAS EXISTENTES ---
+            velocidad_promedio_general = df_completo['velocity_angular_filtered'].mean()
+            aceleracion_promedio_general = df_completo['acceleration_angular_filtered'].mean()
+            
+            # --- NUEVAS MÉTRICAS ENTRE ESTÍMULOS ---
+            velocidad_promedio_entre_estimulos, aceleracion_promedio_entre_estimulos = calcular_promedios_entre_estimulos(df_completo, eventos_estimulo)
+            # --- FIN DE NUEVAS MÉTRICAS ---
             
             reportes_agregados.append({
                 'archivo': base_filename,
@@ -958,6 +1003,13 @@ def main():
                 'amplitud_media_sac_deg': sacadicos_df['amplitude_deg'].mean() if not sacadicos_df.empty else 0,
                 'vel_media_fij_deg_s': fijaciones_df['velocidad_promedio_deg_s'].mean() if not fijaciones_df.empty else 0,
                 'vel_media_sac_deg_s': sacadicos_df['velocidad_promedio_deg_s'].mean() if not sacadicos_df.empty else 0,
+                # --- MÉTRICAS GENERALES ---
+                'velocidad_promedio_general_deg_s': velocidad_promedio_general,
+                'aceleracion_promedio_general_deg_s2': aceleracion_promedio_general,
+                # --- NUEVAS MÉTRICAS ENTRE ESTÍMULOS ---
+                'velocidad_promedio_entre_estimulos_deg_s': velocidad_promedio_entre_estimulos,
+                'aceleracion_promedio_entre_estimulos_deg_s2': aceleracion_promedio_entre_estimulos
+                # --- FIN DE NUEVAS MÉTRICAS ---
             })
         except Exception as e:
             print(f"ERROR: No se pudo calcular el resumen para '{base_filename}'. Error: {e}")

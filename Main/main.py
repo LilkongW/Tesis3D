@@ -11,7 +11,7 @@ def main():
 
     EXP_NUM = 1
 
-    NOMBRE= "Majo"
+    NOMBRE= "Raul"
 
     # Ruta de videos - compatible con Windows y Linux
     VIDEO_FOLDER_PATH = os.path.join("Videos", f"Experimento_{EXP_NUM}", NOMBRE)

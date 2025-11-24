@@ -9,7 +9,7 @@ import glob
 # --- 1. CONFIGURACIÓN Y PARÁMETROS ---
 NOMBRE = "Stephanie"
 # Directorio de ENTRADA
-EXP_NUM = 3 # <--- ESTA VARIABLE AHORA CONTROLA LOS ESTÍMULOS
+EXP_NUM = 1 # <--- ESTA VARIABLE AHORA CONTROLA LOS ESTÍMULOS
 INPUT_DIR = fr"Data/Experimento_{EXP_NUM}/{NOMBRE}_data"
 # Directorio de SALIDA
 OUTPUT_DIR = fr"Analizar_Data/Resultados/Experimento_{EXP_NUM}/{NOMBRE}_data"
