@@ -1,11 +1,2 @@
-Nombre,Sexo,Edad,Observacion,lux,Rx
-Victor Toro,H,28,NA,67-102,962ohm
-Victoria Maldonado,M,25,NA,62-92,560ohm
-Roygel Rosales,H,32,NA,44-60,630ohm
-Rodelo,H,27,NA,60-80,720ohm
-Chirinos,H,23,NA,80-85,720ohm
-ManuelMal,H,22,NA,25-30,720ohm
-Maria Jose,M,25,NA,35-55,720ohm
-Daniel Venegas,H,21,NA,120-160,NA
-Josuep Turmero,H,26,NA,70-90,NA
-Geremy,H,24,NA,55-75,NA
+Nombre,Sexo,Edad,Observacion,Lux_camara,lux_ambiente
+Victor Toro,H,28,NA,67-102, 560-630

@@ -6,13 +6,16 @@ import os
 import time
 import csv
 from ultralytics import YOLO
-import os 
 
 # ==========================================
 #      CONFIGURACIÓN DE CONTROL (USER)
 # ==========================================
-ENABLE_IRIS_PROCESSING = True   # True: Calcula iris (lento). False: Solo pupila (rápido).
-SHOW_VISUALIZATION = True       # True: Muestra ventana y dibujos. False: Modo "headless" (muy rápido).
+ENABLE_IRIS_PROCESSING = False   # True: Calcula iris. False: Solo pupila (más rápido).
+SHOW_VISUALIZATION = False       # True: Muestra ventana. False: Modo rápido.
+
+# Configuración de Limpieza de Parpadeos
+BLINK_PADDING_FRAMES = 3         # Cuántos frames borrar antes y después de un parpadeo
+
 # ==========================================
 
 # --- PARÁMETROS DE FILTRADO Y PREPROCESAMIENTO ---
@@ -20,7 +23,7 @@ GAUSSIAN_KERNEL_SIZE = (7, 7)
 CLAHE_CLIP_LIMIT = 1.0
 
 # ------------------------------------------
-# 1. Definir la ruta base según el sistema operativo
+# Definir la ruta base
 if os.name == 'nt': 
     BASE_DIR = r"C:\Users\Victor\Documents\Tesis3D"
 else: 
@@ -36,7 +39,7 @@ YOLO_ROI_EXPANSION_PX = 5
 
 # --- UMBRALES ---
 PUPIL_FIXED_THRESHOLD = 14
-MAX_INTERSECTION_DISTANCE = 40
+MAX_INTERSECTION_DISTANCE = 10
 MAX_PUPIL_JUMP_DISTANCE = 120
 MAX_LOST_TRACK_FRAMES = 6
 
@@ -51,15 +54,13 @@ MIN_NORMALIZED_RADIUS = 1.5
 MAX_NORMALIZED_RADIUS = 5
 ROBUST_FILTER_THRESHOLD = 2
 MORPH_CLEANUP_KERNEL_SIZE = 7
-IRIS_SMOOTHING_ALPHA = 0.33
 
 # --- VARIABLES DE ESTADO GLOBALES ---
 ray_lines = []
 model_centers = []
-stable_pupil_centers = []
 max_rays = 120
-prev = (280, 150)
-max_observed_distance = 240
+prev = (160, 120)
+max_observed_distance = 180
 last_known_pupil_center = None
 frames_since_last_good_detection = 0
 smoothed_iris_ellipse = ((0, 0), (0, 0), 0)
@@ -78,19 +79,28 @@ except Exception as e:
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 
-def crop_to_aspect_ratio(image, width=640, height=480):
+def crop_to_aspect_ratio(image, width=320, height=240):
+    # Si la imagen ya tiene el tamaño exacto, la devolvemos inmediatamente.
+    if image.shape[1] == width and image.shape[0] == height:
+        return image
+
     current_height, current_width = image.shape[:2]
     desired_ratio = width / height
     current_ratio = current_width / current_height
+
     if current_ratio > desired_ratio:
+        # La imagen es muy ancha (ej. 16:9): Recortar los lados
         new_width = int(desired_ratio * current_height)
         offset = (current_width - new_width) // 2
         cropped_img = image[:, offset:offset + new_width]
     else:
+        # La imagen es muy alta: Recortar arriba y abajo
         new_height = int(current_width / desired_ratio)
         offset = (current_height - new_height) // 2
         cropped_img = image[offset:offset + new_height, :]
+
     return cv2.resize(cropped_img, (width, height))
+
 
 def apply_fixed_binary_threshold(image, threshold_value):
     _, thresholded_image = cv2.threshold(image, threshold_value, 255, cv2.THRESH_BINARY_INV)
@@ -122,7 +132,7 @@ def optimize_contours_by_angle(contours):
 
 # --- FUNCIÓN process_frames ---
 def process_frames(frame, gray_frame_clahe):
-    global ray_lines, max_rays, prev_model_center_avg, max_observed_distance, stable_pupil_centers, model_centers
+    global ray_lines, max_rays, prev_model_center_avg, max_observed_distance, model_centers
     global last_known_pupil_center, frames_since_last_good_detection
     global smoothed_iris_ellipse
     global model 
@@ -132,13 +142,11 @@ def process_frames(frame, gray_frame_clahe):
         "pupil_center_x": None, "pupil_center_y": None,
         "gaze_x": None, "gaze_y": None, "gaze_z": None,
         "ellipse_width": None, "ellipse_height": None, "ellipse_angle": None,
-        "contour_area": None,
-        "yolo_confidence": 0.0
+        "contour_area": None
     }
     
     h_frame, w_frame = frame.shape[:2]
     
-    max_conf_display = 0.0
     final_rotated_rect = None
     center_x, center_y = None, None
     is_detection_temporally_stable = False
@@ -159,8 +167,6 @@ def process_frames(frame, gray_frame_clahe):
                 if box.conf[0] > max_conf:
                     max_conf = box.conf[0]
                     best_box = box
-        
-        max_conf_display = max_conf
         
         if best_box is not None: 
             x1_raw, y1_raw, x2_raw, y2_raw = best_box.xyxy[0].cpu().numpy().astype(int)
@@ -200,10 +206,11 @@ def process_frames(frame, gray_frame_clahe):
 
         if final_rotated_rect is not None:
             center_x_raw, center_y_raw = map(int, final_rotated_rect[0])
-            stable_pupil_center = update_and_average_point(stable_pupil_centers, (center_x_raw, center_y_raw), N=2)
-            center_x, center_y = stable_pupil_center if stable_pupil_center else (center_x_raw, center_y_raw)
             
-            # --- <<<--- CONTROL LÓGICO: PROCESAMIENTO DE IRIS ---
+            # Asignación directa (Raw Data)
+            center_x, center_y = center_x_raw, center_y_raw
+            
+            # --- PROCESAMIENTO DE IRIS ---
             if ENABLE_IRIS_PROCESSING:
                 iris_edge_points = []
                 cleaned_points = []
@@ -307,18 +314,9 @@ def process_frames(frame, gray_frame_clahe):
                             current_fitted_ellipse = None
                     if current_fitted_ellipse is not None:
                         pupil_center = final_rotated_rect[0]
-                        if smoothed_iris_ellipse[1][0] == 0.0:
-                            smoothed_iris_ellipse = (pupil_center, current_fitted_ellipse[1], current_fitted_ellipse[2])
-                        else:
-                            alpha = IRIS_SMOOTHING_ALPHA
-                            scx, scy = pupil_center
-                            sax = (current_fitted_ellipse[1][0] * alpha) + (smoothed_iris_ellipse[1][0] * (1.0 - alpha))
-                            say = (current_fitted_ellipse[1][1] * alpha) + (smoothed_iris_ellipse[1][1] * (1.0 - alpha))
-                            sang = (current_fitted_ellipse[2] * alpha) + (smoothed_iris_ellipse[2] * (1.0 - alpha))
-                            smoothed_iris_ellipse = ((scx, scy), (sax, say), sang)
-            # --- FIN DEL IF ENABLE_IRIS_PROCESSING ---
+                        smoothed_iris_ellipse = (pupil_center, current_fitted_ellipse[1], current_fitted_ellipse[2])
 
-            # --- FILTRO 3: TEMPORAL ---
+            # --- FILTRO 3: TEMPORAL (Solo para validación de saltos grandes) ---
             new_pupil_center = (center_x, center_y)
             if last_known_pupil_center is None:
                 is_detection_temporally_stable = True
@@ -369,11 +367,10 @@ def process_frames(frame, gray_frame_clahe):
                 data_dict["gaze_x"] = direction_3d[0]; data_dict["gaze_y"] = direction_3d[1]; data_dict["gaze_z"] = direction_3d[2]
                 data_dict["ellipse_width"] = final_rotated_rect[1][0]; data_dict["ellipse_height"] = final_rotated_rect[1][1]; data_dict["ellipse_angle"] = final_rotated_rect[2]
 
-    # --- <<<--- CONTROL LÓGICO: VISUALIZACIÓN ---
+    # --- VISUALIZACIÓN ---
     if SHOW_VISUALIZATION:
-        # Dibujamos SOLO si está activado
         if is_detection_temporally_stable and dist_from_sphere_center <= max_observed_distance:
-             # Bbox y ROI
+            # Bbox y ROI
             (bx1, by1, bx2, by2) = expanded_bbox
             if best_box is not None:
                 cv2.rectangle(frame, (bx1, by1), (bx2, by2), (255, 0, 0), 1)
@@ -406,9 +403,7 @@ def process_frames(frame, gray_frame_clahe):
             status_color = (0, 0, 255)
         cv2.putText(frame, status_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, status_color, 2)
         
-        # MOSTRAR VENTANA
         cv2.imshow("Frame with Ellipse and Rays", frame)
-    # --- FIN CONTROL VISUALIZACIÓN ---
     
     return data_dict
 
@@ -500,13 +495,44 @@ def process_frame(frame_recortado):
     data_dict = process_frames(frame_recortado, gray_frame_clahe) 
     return data_dict
 
-# --- FUNCIÓN DE PROCESAMIENTO DE VIDEO ---
-def process_video_from_path(video_path, video_name, csv_path,prev):
-    global ray_lines, model_centers, stable_pupil_centers, prev_model_center_avg
-    global last_known_pupil_center, frames_since_last_good_detection
-    global smoothed_iris_ellipse, RETRAIN_FRAMES_DIR 
+# --- NUEVA FUNCIÓN: LIMPIEZA DE PARPADEOS ---
+def apply_blink_cleaning(rows, padding=3):
+    """
+    Identifica frames donde no hubo detección y marca N frames antes y después
+    como inválidos para eliminar artefactos del párpado.
+    """
+    n = len(rows)
+    # El índice 3 corresponde a 'valid_deteccion' en la lista 'row'
+    invalid_indices = {i for i, row in enumerate(rows) if not row[3]}
+    
+    if not invalid_indices:
+        return rows, 0
+    
+    indices_to_invalidate = set()
+    for idx in invalid_indices:
+        start = max(0, idx - padding)
+        end = min(n, idx + padding + 1)
+        for i in range(start, end):
+            indices_to_invalidate.add(i)
+            
+    count = 0
+    for idx in indices_to_invalidate:
+        if rows[idx][3]: # Si era True, lo marcamos como False
+            rows[idx][3] = False
+            count += 1
+            
+    return rows, count
 
-    ray_lines, model_centers, stable_pupil_centers = [], [], []
+# --- FUNCIÓN DE PROCESAMIENTO DE VIDEO MODIFICADA ---
+def process_video_from_path(video_path, video_name, csv_path, prev):
+    # Variables globales
+    global ray_lines, model_centers, prev_model_center_avg
+    global last_known_pupil_center, frames_since_last_good_detection
+    global smoothed_iris_ellipse 
+    # Eliminado 'stable_pupil_centers' para evitar errores
+
+    ray_lines, model_centers = [], []
+    
     prev_model_center_avg = prev
     last_known_pupil_center = None
     frames_since_last_good_detection = 0
@@ -521,7 +547,10 @@ def process_video_from_path(video_path, video_name, csv_path,prev):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened(): print(f"Error opening video file {video_path}"); return
     
-    fps = cap.get(cv2.CAP_PROP_FPS); fps = fps if fps > 0 else 30.0
+    # --- CORRECCIÓN DE FPS (CLAVE 1) ---
+    REAL_FPS = 120.0 
+    fps = REAL_FPS 
+    
     frame_delay = int(1000 / fps); frame_counter = 0
     
     print(f"Processing video: {video_path}")
@@ -539,63 +568,78 @@ def process_video_from_path(video_path, video_name, csv_path,prev):
         "ellipse_width", "ellipse_height", "ellipse_angle",
         "contour_area",
     ]
+    
+    # BUFFER DE MEMORIA PARA LIMPIEZA POST-PROCESO
+    all_csv_rows = []
+
     try:
+        while True:
+            start_time = time.time()
+            ret, frame = cap.read()
+            if not ret: break
+            frame_counter += 1
+            
+            # --- CORRECCIÓN DE TIMESTAMP (CLAVE 2) ---
+            timestamp_ms = (frame_counter / fps) * 1000.0
+            
+            # --- CORRECCIÓN DE IMAGEN (CLAVE 3) ---
+            frame_recortado_limpio = crop_to_aspect_ratio(frame)
+            
+            # Procesamos el frame
+            data = process_frame(frame_recortado_limpio.copy())
+            
+            if not data.get("valid_deteccion", False):
+                frame_filename = f"{video_name}_ts_{timestamp_ms:.0f}.jpg"
+                save_path = os.path.join(RETRAIN_FRAMES_DIR, frame_filename)
+                try:
+                    cv2.imwrite(save_path, frame_recortado_limpio) 
+                except Exception as e:
+                    pass 
+
+            if data.get("valid_deteccion") and data.get("contour_area") is not None:
+                current_area = data["contour_area"]
+                min_area_found = min(min_area_found, current_area)
+                max_area_found = max(max_area_found, current_area)
+                
+            row = [
+                video_name, frame_counter, f"{timestamp_ms:.3f}", data.get("valid_deteccion", False),
+                f"{data.get('sphere_center_x', ''):.3f}" if data.get('sphere_center_x') is not None else '',
+                f"{data.get('sphere_center_y', ''):.3f}" if data.get('sphere_center_y') is not None else '',
+                f"{data.get('sphere_center_z', ''):.3f}" if data.get('sphere_center_z') is not None else '',
+                f"{data.get('pupil_center_x', ''):.3f}" if data.get('pupil_center_x') is not None else '',
+                f"{data.get('pupil_center_y', ''):.3f}" if data.get('pupil_center_y') is not None else '',
+                f"{data.get('gaze_x', ''):.6f}" if data.get('gaze_x') is not None else '',
+                f"{data.get('gaze_y', ''):.6f}" if data.get('gaze_y') is not None else '',
+                f"{data.get('gaze_z', ''):.6f}" if data.get('gaze_z') is not None else '',
+                f"{data.get('ellipse_width', ''):.3f}" if data.get('ellipse_width') is not None else '',
+                f"{data.get('ellipse_height', ''):.3f}" if data.get('ellipse_height') is not None else '',
+                f"{data.get('ellipse_angle', ''):.3f}" if data.get('ellipse_angle') is not None else '',
+                f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else '',
+            ]
+            
+            # EN LUGAR DE ESCRIBIR, GUARDAMOS EN RAM
+            all_csv_rows.append(row)
+            
+            # --- CONTROL DE VELOCIDAD/VISUALIZACIÓN ---
+            if SHOW_VISUALIZATION:
+                processing_duration_ms = (time.time() - start_time) * 1000
+                wait_time = max(1, frame_delay - int(processing_duration_ms))
+                key = cv2.waitKey(wait_time) & 0xFF
+                if key == ord('q'): print("Processing stopped by user."); break
+                elif key == ord(' '): print("Paused. Press any key to continue..."); cv2.waitKey(0)
+            else:
+                if frame_counter % 100 == 0:
+                    print(f"Frame {frame_counter} procesado...")
+
+        # --- FASE DE LIMPIEZA Y ESCRITURA ---
+        print("   -> Aplicando limpieza de parpadeos...")
+        clean_rows, cleaned_count = apply_blink_cleaning(all_csv_rows, padding=BLINK_PADDING_FRAMES)
+        print(f"   -> {cleaned_count} frames de artefactos invalidados.")
+        
         with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             writer.writerow(csv_header)
-            while True:
-                start_time = time.time()
-                ret, frame = cap.read()
-                if not ret: break
-                frame_counter += 1
-                
-                timestamp_ms = (frame_counter / fps) * 1000.0
-                frame_recortado_limpio = crop_to_aspect_ratio(frame)
-                
-                # Procesamos el frame
-                data = process_frame(frame_recortado_limpio.copy())
-                
-                if not data.get("valid_deteccion", False):
-                    frame_filename = f"{video_name}_ts_{timestamp_ms:.0f}.jpg"
-                    save_path = os.path.join(RETRAIN_FRAMES_DIR, frame_filename)
-                    try:
-                        cv2.imwrite(save_path, frame_recortado_limpio) 
-                    except Exception as e:
-                        pass # Silenciar errores de escritura para no saturar consola
-
-                if data.get("valid_deteccion") and data.get("contour_area") is not None:
-                    current_area = data["contour_area"]
-                    min_area_found = min(min_area_found, current_area)
-                    max_area_found = max(max_area_found, current_area)
-                    
-                row = [
-                    video_name, frame_counter, f"{timestamp_ms:.3f}", data.get("valid_deteccion", False),
-                    f"{data.get('sphere_center_x', ''):.3f}" if data.get('sphere_center_x') is not None else '',
-                    f"{data.get('sphere_center_y', ''):.3f}" if data.get('sphere_center_y') is not None else '',
-                    f"{data.get('sphere_center_z', ''):.3f}" if data.get('sphere_center_z') is not None else '',
-                    f"{data.get('pupil_center_x', ''):.3f}" if data.get('pupil_center_x') is not None else '',
-                    f"{data.get('pupil_center_y', ''):.3f}" if data.get('pupil_center_y') is not None else '',
-                    f"{data.get('gaze_x', ''):.6f}" if data.get('gaze_x') is not None else '',
-                    f"{data.get('gaze_y', ''):.6f}" if data.get('gaze_y') is not None else '',
-                    f"{data.get('gaze_z', ''):.6f}" if data.get('gaze_z') is not None else '',
-                    f"{data.get('ellipse_width', ''):.3f}" if data.get('ellipse_width') is not None else '',
-                    f"{data.get('ellipse_height', ''):.3f}" if data.get('ellipse_height') is not None else '',
-                    f"{data.get('ellipse_angle', ''):.3f}" if data.get('ellipse_angle') is not None else '',
-                    f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else '',
-                ]
-                writer.writerow(row)
-                
-                # --- CONTROL DE VELOCIDAD/VISUALIZACIÓN ---
-                if SHOW_VISUALIZATION:
-                    processing_duration_ms = (time.time() - start_time) * 1000
-                    wait_time = max(1, frame_delay - int(processing_duration_ms))
-                    key = cv2.waitKey(wait_time) & 0xFF
-                    if key == ord('q'): print("Processing stopped by user."); break
-                    elif key == ord(' '): print("Paused. Press any key to continue..."); cv2.waitKey(0)
-                else:
-                    # Sin visualización: no esperamos. Solo imprimimos progreso cada tanto
-                    if frame_counter % 100 == 0:
-                        print(f"Frame {frame_counter} procesado...")
+            writer.writerows(clean_rows)
 
     except IOError as e: print(f"Error writing to CSV file {csv_path}: {e}")
     except Exception as e: print(f"An unexpected error occurred during processing: {e}")

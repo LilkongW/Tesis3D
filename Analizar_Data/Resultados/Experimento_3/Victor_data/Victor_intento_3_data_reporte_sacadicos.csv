@@ -1,4 +1,0 @@
-event_id,event_type,event_class,start_time_ms,end_time_ms,duration_ms,amplitude_deg,velocidad_promedio_deg_s
-s_3,sacadico,sacadico,600.0,666.667,66.66700000000003,2.3418512443669184,46.21822957468194
-s_1447,sacadico,sacadico,48733.333,48800.0,66.66700000000128,90.0,47.70697948446247
-s_1452,sacadico,sacadico,48900.0,49000.0,100.0,2.723690312057805,31.670111767161988
