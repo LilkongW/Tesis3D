@@ -31,17 +31,27 @@ OUTPUT_FPS = 60.0        # FPS del video de salida (más estable para archivos)
 BASE_SAVE_PATH = "/home/vit/Documentos/Tesis3D/Videos"
 
 # ============================================================================
-# CONFIGURACIÓN DE PANTALLA Y VISUAL
+# CONFIGURACIÓN DE PANTALLA Y VISUAL (VERSIÓN CORREGIDA)
 # ============================================================================
 
 # Obtener resolución de pantalla automáticamente
 import tkinter as tk
-_root = tk.Tk()
-_root.withdraw()  # Ocultar ventana
-SCREEN_WIDTH = _root.winfo_screenwidth()
-SCREEN_HEIGHT = _root.winfo_screenheight()
-_root.destroy()
 
+def get_screen_resolution():
+    """Obtiene la resolución de pantalla de forma segura"""
+    try:
+        root = tk.Tk()
+        root.update_idletasks()  # Forzar actualización
+        width = root.winfo_screenwidth()
+        height = root.winfo_screenheight()
+        root.destroy()
+        return width, height
+    except Exception as e:
+        print(f"[PANTALLA] ⚠️ Error al detectar resolución: {e}")
+        print("[PANTALLA] Usando resolución por defecto: 1920x1080")
+        return 1920, 1080
+
+SCREEN_WIDTH, SCREEN_HEIGHT = get_screen_resolution()
 print(f"[PANTALLA] Resolución detectada: {SCREEN_WIDTH}x{SCREEN_HEIGHT}")
 
 # Configuración del círculo
@@ -552,11 +562,11 @@ def run_experiment_iteration(positions, fps, exp_name, nombre_persona, numero_in
         exp_start = experiment_frame_times[0]
         web_start = webcam_frame_times[0]
         offset = abs(exp_start - web_start)
-        print("\n[SYNC] ═══════════════════════════════════")
+        print("\n[SYNC] ╔═══════════════════════════════════")
         print(f"[SYNC] Offset inicial (Video vs Estímulo): {offset*1000:.2f} ms")
         print(f"[SYNC] Frames experimento: {len(experiment_frame_times)}")
         print(f"[SYNC] Frames webcam grabados: {len(webcam_frame_times)}")
-        print("[SYNC] ═══════════════════════════════════\n")
+        print("[SYNC] ╚═══════════════════════════════════\n")
     
     print(f"[{exp_name}] ✓ Iteración Completada\n")
     return True
@@ -574,8 +584,7 @@ def run_all_experiments(nombre_persona, total_iteraciones, exp_num):
     print("="*70)
     
     # Crear carpeta de guardado
-    exp_names = {0: "punto_fijo", 1: "9_puntos", 2: "5_puntos", 3: "espiral"}
-    save_path = os.path.join(BASE_SAVE_PATH, f"Experimento_{exp_num}_{exp_names[exp_num]}", nombre_persona)
+    save_path = os.path.join(BASE_SAVE_PATH, f"Experimento_{exp_num}", nombre_persona)
     os.makedirs(save_path, exist_ok=True)
     print(f"[SETUP] Carpeta: {save_path}")
     
