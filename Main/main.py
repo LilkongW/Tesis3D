@@ -5,7 +5,7 @@ from utils.eye_tracker_utils3 import process_video_from_path
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (130, 160) # (ancho,alto)
+    prev = (140, 160) # (ancho,alto)
 
     EXP_NUM = 1
 

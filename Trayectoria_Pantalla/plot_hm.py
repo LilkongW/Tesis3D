@@ -3,7 +3,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # 1. Cargar datos
-file_path = r'C:\Users\Victor\Documents\Tesis3D\Data\Experimento_1\Victor_data\Victor_experimento_1_intento_3_data.csv'
+file_path = r'C:\Users\Victor\Documents\Tesis3D\Data\Experimento_1\Victor_data\Victor_9_puntos_intento_1_data.csv'
 df = pd.read_csv(file_path)
 df_valid = df[df['valid_deteccion']].copy() # Usamos .copy() para evitar advertencias de pandas
 

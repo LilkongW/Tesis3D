@@ -184,6 +184,7 @@ def main():
     # Calcular error en píxeles
     errors = np.linalg.norm(real_targets_px - estimated_px, axis=1)
     mean_error = np.mean(errors)
+    print(f"Error medio de calibración: {mean_error:.2f} px")
     
     plt.figure(figsize=(12, 8))
     plt.style.use('dark_background')
