@@ -1,15 +1,15 @@
 import os
 # Importamos la única función que necesitamos desde nuestro módulo de utilidades
-from utils.eye_tracker_utils3 import process_video_from_path
+from utils.eye_tracker_utils import process_video_from_path
 
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (140, 160) # (ancho,alto)
+    prev = (130, 160) # (ancho,alto)
 
     EXP_NUM = 1
 
-    NOMBRE= "Victor"
+    NOMBRE= "Venegas"
 
     # Ruta de videos - compatible con Windows y Linux
     VIDEO_FOLDER_PATH = os.path.join("Videos", f"Experimento_{EXP_NUM}", NOMBRE)
