@@ -16,6 +16,10 @@ UMB_VEL_FIJ = 80.0
 UMB_ACEL_SAC = 250.0  
 TIME_OFFSET = 0.600   # <--- Desplazamiento del T=0 (600ms)
 
+# Obtener la ruta base: subir un nivel desde el directorio del script
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(SCRIPT_DIR)  # Esto sube un nivel a Tesis3D C:\Users\Victor\Documents\Tesis3D
+
 # Rutas predefinidas (Modifica si cambian)
 DATA_PATH = r"C:\Users\Victor\Documents\Tesis3D\Data\Experimento_1\Victor_data\Victor_9_puntos_intento_1_data.csv"
 STIM_PATH = r"C:\Users\Victor\Documents\Tesis3D\Videos\Experimento_1\Victor\Victor_9_puntos_intento_1_stimulus.csv"

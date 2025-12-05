@@ -5,11 +5,11 @@ from utils.eye_tracker_utils import process_video_from_path
 def main():
     # --- CONFIGURACIÓN DE RUTAS ---
 
-    prev = (130, 160) # (ancho,alto)
+    prev = (125, 170) # (ancho,alto)
 
     EXP_NUM = 1
 
-    NOMBRE= "Venegas"
+    NOMBRE= "Rodelo"
 
     # Ruta de videos - compatible con Windows y Linux
     VIDEO_FOLDER_PATH = os.path.join("Videos", f"Experimento_{EXP_NUM}", NOMBRE)

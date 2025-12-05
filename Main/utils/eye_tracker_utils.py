@@ -11,7 +11,7 @@ from ultralytics import YOLO
 #      CONFIGURACIÓN DE CONTROL (USER)
 # ==========================================
 ENABLE_IRIS_PROCESSING = False   # True: Calcula iris. False: Solo pupila (más rápido).
-SHOW_VISUALIZATION = False       # True: Muestra ventana. False: Modo rápido.
+SHOW_VISUALIZATION = True       # True: Muestra ventana. False: Modo rápido.
 
 # Configuración de Limpieza de Parpadeos
 BLINK_PADDING_FRAMES = 3         # Cuántos frames borrar antes y después de un parpadeo
@@ -38,7 +38,7 @@ YOLO_MIN_CONFIDENCE = 0.5
 YOLO_ROI_EXPANSION_PX = 5 
 
 # --- UMBRALES ---
-PUPIL_FIXED_THRESHOLD = 14
+PUPIL_FIXED_THRESHOLD = 20
 MAX_INTERSECTION_DISTANCE = 10
 MAX_PUPIL_JUMP_DISTANCE = 120
 MAX_LOST_TRACK_FRAMES = 6
