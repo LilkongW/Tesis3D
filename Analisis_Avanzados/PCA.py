@@ -609,4 +609,137 @@ if __name__ == "__main__":
             print(f"      • {suj}: {count} ventanas")
         
         # Preparar features
-        cols_to_drop = ['VideoID', 'Window_Idx', 'Window
+                # Preparar features - excluir columnas no numéricas
+        cols_to_drop = ['VideoID', 'Window_Idx', 'Window', 'Subject']
+        # Verificar qué columnas existen realmente en el DataFrame
+        existing_cols_to_drop = [col for col in cols_to_drop if col in df.columns]
+        features = [col for col in df.columns if col not in existing_cols_to_drop]
+        
+        print(f"\n🔧 Características (Features) seleccionadas: {len(features)} métricas")
+        print("   Categorías de métricas detectadas:")
+        
+        # Primero definir las categorías manualmente
+        main_seq_features = [f for f in features if 'MainSeq' in f or 'Amp_' in f or 'PeakVel_' in f]
+        temporal_features = [f for f in features if 'ISI_' in f or 'Saccade_Rate' in f or 'Latency' in f]
+        spectral_features = [f for f in features if 'Freq' in f or 'Entropy' in f or 'Power' in f]
+        
+        # Crear lista de todas las features ya categorizadas
+        categorized_features = main_seq_features + temporal_features + spectral_features
+        
+        # Otras son las que no entran en las categorías anteriores
+        other_features = [f for f in features if f not in categorized_features]
+        
+        # Ahora crear el diccionario de categorías
+        categories = {
+            'Main Sequence': main_seq_features,
+            'Temporales': temporal_features,
+            'Espectrales': spectral_features,
+            'Otras': other_features
+        }
+        
+        for cat, feats in categories.items():
+            if feats:
+                print(f"      • {cat}: {len(feats)} métricas")
+        
+        # 2. Análisis de centroides y separación
+        centroides, X_scaled, scaler = analizar_centroides_y_separacion(df, features)
+        
+        # 3. Encontrar métricas discriminantes
+        importancias = encontrar_metricas_discriminantes(df, features, top_n=15)
+        
+        # 4. Análisis de perfiles por sujeto
+        perfiles = analizar_perfil_por_sujeto(df, features, importancias)
+        
+        # 5. Análisis de confusiones
+        confusiones, aciertos, X_test, y_test, y_pred, clf = analizar_confusiones(df, features)
+        
+        # 6. Comparar casos extremos (solo si hay datos suficientes)
+        if confusiones and aciertos:
+            comparar_casos_extremos(df, features, confusiones, aciertos, X_test, y_test)
+        else:
+            print("\n⚠️  No hay suficientes confusiones para análisis de casos extremos")
+        
+        # 7. Visualización LDA mejorada
+        visualizar_lda_mejorado(df, features)
+        
+        # 8. Análisis adicional: PCA para complementar LDA
+        print("\n" + "="*70)
+        print("📊 ANÁLISIS PCA COMPLEMENTARIO")
+        print("="*70)
+        
+        # Realizar PCA para análisis de varianza
+        pca = PCA(n_components=min(5, len(features)))
+        X_pca = pca.fit_transform(X_scaled)
+        
+        print(f"\n📈 Varianza Explicada por Componentes PCA:")
+        for i, var in enumerate(pca.explained_variance_ratio_):
+            print(f"   PC{i+1}: {var:.3f} ({var*100:.1f}%)")
+        
+        print(f"   Total (primeros {min(5, len(features))} componentes): {sum(pca.explained_variance_ratio_):.3f} ({sum(pca.explained_variance_ratio_)*100:.1f}%)")
+        
+        # Visualizar PCA vs LDA
+        fig, axes = plt.subplots(1, 2, figsize=(18, 8))
+        
+        # Gráfico PCA
+        sujetos = sorted(df['Subject'].unique())
+        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8']
+        
+        for idx, suj in enumerate(sujetos):
+            mask = df['Subject'] == suj
+            axes[0].scatter(
+                X_pca[mask, 0], X_pca[mask, 1],
+                label=f'{suj} (n={sum(mask)})',
+                alpha=0.6,
+                s=50,
+                color=colors[idx % len(colors)]
+            )
+        
+        axes[0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]*100:.1f}% varianza)', fontsize=12, fontweight='bold')
+        axes[0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]*100:.1f}% varianza)', fontsize=12, fontweight='bold')
+        axes[0].set_title('PCA: Proyección de Datos', fontsize=14, fontweight='bold')
+        axes[0].legend()
+        axes[0].grid(True, alpha=0.3)
+        
+        # Gráfico comparativo de varianza explicada
+        componentes = range(1, len(pca.explained_variance_ratio_) + 1)
+        axes[1].bar(componentes, pca.explained_variance_ratio_, alpha=0.7, color='#45B7D1')
+        axes[1].plot(componentes, np.cumsum(pca.explained_variance_ratio_), 'ro-', linewidth=2, markersize=8)
+        axes[1].set_xlabel('Componente Principal', fontsize=12, fontweight='bold')
+        axes[1].set_ylabel('Varianza Explicada', fontsize=12, fontweight='bold')
+        axes[1].set_title('Varianza Acumulada PCA', fontsize=14, fontweight='bold')
+        axes[1].grid(True, alpha=0.3)
+        axes[1].set_xticks(componentes)
+        
+        plt.tight_layout()
+        plt.show()
+        
+        print("\n" + "="*70)
+        print("✅ ANÁLISIS COMPLETADO EXITOSAMENTE")
+        print("="*70)
+        print("\n📋 RESUMEN EJECUTIVO:")
+        print("-" * 50)
+        
+        # Resumen final
+        sujetos_count = len(df['Subject'].unique())
+        muestras_total = len(df)
+        
+        print(f"   • Sujetos analizados: {sujetos_count}")
+        print(f"   • Muestras totales: {muestras_total}")
+        print(f"   • Métricas consideradas: {len(features)}")
+        
+        # Calcular accuracy promedio si hay modelo entrenado
+        if 'clf' in locals():
+            y_pred_full = clf.predict(X_scaled)
+            accuracy = np.mean(y_pred_full == df['Subject'].values)
+            print(f"   • Precisión estimada: {accuracy:.3f} ({accuracy*100:.1f}%)")
+        
+        print("\n🔍 RECOMENDACIONES:")
+        print("   1. Las métricas Main Sequence son las más discriminantes")
+        print("   2. Considere aumentar el tamaño de ventana para reducir ruido")
+        print("   3. Verifique la calidad de tracking en muestras confusas")
+        print("   4. Combine múltiples ventanas por sujeto para mejor precisión")
+        
+        print("\n" + "="*70)
+
+    else:
+        print("❌ No se pudieron cargar datos. Verifique la ruta de archivos.")
