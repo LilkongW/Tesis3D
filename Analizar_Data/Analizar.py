@@ -16,7 +16,7 @@ BASE_DIR = os.path.dirname(SCRIPT_DIR)  # Esto sube un nivel a Tesis3D
 # =============================================================================
 
 CONFIG = {
-    'NAME': "Rodelo",
+    'NAME': "Venegas",
     'EXP_NUM': 1,  # <--- 0=Fijo, 1=Lectura, 2=Saltos, 3=Espiral
     'PATHS': {
         'BASE': BASE_DIR

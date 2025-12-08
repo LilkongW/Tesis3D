@@ -37,11 +37,60 @@ def cargar_datos():
     for f in files:
         df = pd.read_csv(f)
         # Extraer el nombre del sujeto del VideoID
-        df['Subject'] = df['VideoID'].apply(lambda x: x.split('_')[0])
+        if 'VideoID' in df.columns:
+            df['Subject'] = df['VideoID'].apply(lambda x: x.split('_')[0])
+        else:
+            print(f"⚠️  Advertencia: 'VideoID' no encontrado en {os.path.basename(f)}")
+            continue
         dfs.append(df)
     
+    if not dfs:
+        return None
+        
     full_df = pd.concat(dfs, ignore_index=True)
     return full_df
+
+def limpiar_datos(df, features):
+    """
+    Limpia el DataFrame de valores NaN e Infinitos que rompen Scikit-Learn.
+    """
+    print("\n" + "="*70)
+    print("🧹 LIMPIEZA DE DATOS")
+    print("="*70)
+    
+    # 1. Reemplazar infinitos por NaN
+    df[features] = df[features].replace([np.inf, -np.inf], np.nan)
+    
+    # Contar NaNs iniciales
+    nans_iniciales = df[features].isna().sum().sum()
+    print(f"   • Valores nulos/infinitos detectados: {nans_iniciales}")
+    
+    # 2. Imputar NaNs con la media de la columna (Feature)
+    # Usamos fillna con la media numérica solo en las features
+    df[features] = df[features].fillna(df[features].mean())
+    
+    # 3. Verificar si quedan NaNs (por ejemplo, si una columna era toda NaN)
+    cols_con_nan = df[features].columns[df[features].isna().any()].tolist()
+    
+    if cols_con_nan:
+        print(f"   ⚠️  Columnas completamente vacías eliminadas: {cols_con_nan}")
+        features = [f for f in features if f not in cols_con_nan]
+        df = df.drop(columns=cols_con_nan)
+    
+    # 4. Eliminar columnas con varianza 0 (valores constantes) que rompen LDA
+    scaler = StandardScaler()
+    try:
+        var = df[features].var()
+        cols_constantes = var[var == 0].index.tolist()
+        if cols_constantes:
+            print(f"   ⚠️  Columnas constantes (sin información) eliminadas: {cols_constantes}")
+            features = [f for f in features if f not in cols_constantes]
+            df = df.drop(columns=cols_constantes)
+    except Exception as e:
+        print(f"   ⚠️  Error verificando varianza: {e}")
+
+    print(f"   ✅ Datos limpios. Features activas: {len(features)}")
+    return df, features
 
 def analizar_centroides_y_separacion(df, features):
     """Calcula centroides y distancias entre sujetos."""
@@ -70,9 +119,10 @@ def analizar_centroides_y_separacion(df, features):
             distancias.append(dist)
             print(f"   {suj1} ↔ {suj2}: {dist:.3f}")
     
-    print(f"\n📊 Distancia promedio: {np.mean(distancias):.3f} (±{np.std(distancias):.3f})")
-    print(f"   Distancia mínima: {np.min(distancias):.3f}")
-    print(f"   Distancia máxima: {np.max(distancias):.3f}")
+    if distancias:
+        print(f"\n📊 Distancia promedio: {np.mean(distancias):.3f} (±{np.std(distancias):.3f})")
+        print(f"   Distancia mínima: {np.min(distancias):.3f}")
+        print(f"   Distancia máxima: {np.max(distancias):.3f}")
     
     return centroides, X_scaled, scaler
 
@@ -89,6 +139,11 @@ def encontrar_metricas_discriminantes(df, features, top_n=15):
     X_scaled = scaler.fit_transform(X)
     
     # Random Forest para importancia de features
+    # Manejo de error si X tiene NaNs residuales
+    if np.isnan(X_scaled).any():
+        print("❌ Error Crítico: Aún quedan NaNs en los datos escalados.")
+        return None
+
     clf = RandomForestClassifier(n_estimators=300, random_state=42, max_depth=10)
     clf.fit(X_scaled, y)
     
@@ -194,6 +249,9 @@ def analizar_perfil_por_sujeto(df, features, top_features):
     print("👤 PERFILES ÚNICOS POR SUJETO")
     print("="*70)
     
+    if top_features is None:
+        return {}
+
     sujetos = sorted(df['Subject'].unique())
     perfiles = {}
     
@@ -388,16 +446,16 @@ def comparar_casos_extremos(df, features, confusiones, aciertos, X_test, y_test)
         
         # T-test
         try:
-            t_stat, p_val = ttest_ind(vals_confusos, vals_claros)
+            t_stat, p_val = ttest_ind(vals_confusos, vals_claros, nan_policy='omit')
         except:
             continue
         
         if p_val < 0.05:  # Significativo
             diferencias.append({
                 'Feature': feat,
-                'Media_Confusos': np.mean(vals_confusos),
-                'Media_Claros': np.mean(vals_claros),
-                'Diferencia': abs(np.mean(vals_confusos) - np.mean(vals_claros)),
+                'Media_Confusos': np.nanmean(vals_confusos),
+                'Media_Claros': np.nanmean(vals_claros),
+                'Diferencia': abs(np.nanmean(vals_confusos) - np.nanmean(vals_claros)),
                 'P_value': p_val
             })
     
@@ -504,22 +562,25 @@ def visualizar_lda_mejorado(df, features):
         
         # Elipse de confianza (2 desviaciones estándar)
         if len(datos) > 2:
-            cov = np.cov(datos['LD1'], datos['LD2'])
-            lambda_, v = np.linalg.eig(cov)
-            lambda_ = np.sqrt(lambda_)
-            
-            ellipse = Ellipse(
-                xy=(cx, cy),
-                width=lambda_[0]*4,  # 2 std
-                height=lambda_[1]*4,
-                angle=np.degrees(np.arctan2(*v[:,0][::-1])),
-                facecolor=color_map[suj],
-                alpha=0.15,
-                edgecolor=color_map[suj],
-                linewidth=2.5,
-                linestyle='--'
-            )
-            ax.add_patch(ellipse)
+            try:
+                cov = np.cov(datos['LD1'], datos['LD2'])
+                lambda_, v = np.linalg.eig(cov)
+                lambda_ = np.sqrt(lambda_)
+                
+                ellipse = Ellipse(
+                    xy=(cx, cy),
+                    width=lambda_[0]*4,  # 2 std
+                    height=lambda_[1]*4,
+                    angle=np.degrees(np.arctan2(*v[:,0][::-1])),
+                    facecolor=color_map[suj],
+                    alpha=0.15,
+                    edgecolor=color_map[suj],
+                    linewidth=2.5,
+                    linestyle='--'
+                )
+                ax.add_patch(ellipse)
+            except Exception as e:
+                print(f"⚠️ No se pudo dibujar elipse para {suj}: {e}")
     
     # Líneas entre centroides con distancias
     for i in range(len(sujetos)):
@@ -608,28 +669,30 @@ if __name__ == "__main__":
             count = len(df[df['Subject'] == suj])
             print(f"      • {suj}: {count} ventanas")
         
-        # Preparar features
-                # Preparar features - excluir columnas no numéricas
+        # Preparar features - excluir columnas no numéricas
         cols_to_drop = ['VideoID', 'Window_Idx', 'Window', 'Subject']
-        # Verificar qué columnas existen realmente en el DataFrame
         existing_cols_to_drop = [col for col in cols_to_drop if col in df.columns]
+        
+        # Selección de columnas numéricas únicamente
         features = [col for col in df.columns if col not in existing_cols_to_drop]
+        # Filtrar solo columnas que realmente sean numéricas (doble seguridad)
+        features = [col for col in features if pd.api.types.is_numeric_dtype(df[col])]
         
+        # =====================================================================
+        #  NUEVO PASO: LIMPIEZA DE DATOS (CRUCIAL)
+        # =====================================================================
+        df, features = limpiar_datos(df, features)
+        # =====================================================================
+
         print(f"\n🔧 Características (Features) seleccionadas: {len(features)} métricas")
-        print("   Categorías de métricas detectadas:")
         
-        # Primero definir las categorías manualmente
+        # Clasificación de métricas para reporte
         main_seq_features = [f for f in features if 'MainSeq' in f or 'Amp_' in f or 'PeakVel_' in f]
         temporal_features = [f for f in features if 'ISI_' in f or 'Saccade_Rate' in f or 'Latency' in f]
         spectral_features = [f for f in features if 'Freq' in f or 'Entropy' in f or 'Power' in f]
-        
-        # Crear lista de todas las features ya categorizadas
         categorized_features = main_seq_features + temporal_features + spectral_features
-        
-        # Otras son las que no entran en las categorías anteriores
         other_features = [f for f in features if f not in categorized_features]
         
-        # Ahora crear el diccionario de categorías
         categories = {
             'Main Sequence': main_seq_features,
             'Temporales': temporal_features,
@@ -647,99 +710,80 @@ if __name__ == "__main__":
         # 3. Encontrar métricas discriminantes
         importancias = encontrar_metricas_discriminantes(df, features, top_n=15)
         
-        # 4. Análisis de perfiles por sujeto
-        perfiles = analizar_perfil_por_sujeto(df, features, importancias)
-        
-        # 5. Análisis de confusiones
-        confusiones, aciertos, X_test, y_test, y_pred, clf = analizar_confusiones(df, features)
-        
-        # 6. Comparar casos extremos (solo si hay datos suficientes)
-        if confusiones and aciertos:
-            comparar_casos_extremos(df, features, confusiones, aciertos, X_test, y_test)
-        else:
-            print("\n⚠️  No hay suficientes confusiones para análisis de casos extremos")
-        
-        # 7. Visualización LDA mejorada
-        visualizar_lda_mejorado(df, features)
-        
-        # 8. Análisis adicional: PCA para complementar LDA
-        print("\n" + "="*70)
-        print("📊 ANÁLISIS PCA COMPLEMENTARIO")
-        print("="*70)
-        
-        # Realizar PCA para análisis de varianza
-        pca = PCA(n_components=min(5, len(features)))
-        X_pca = pca.fit_transform(X_scaled)
-        
-        print(f"\n📈 Varianza Explicada por Componentes PCA:")
-        for i, var in enumerate(pca.explained_variance_ratio_):
-            print(f"   PC{i+1}: {var:.3f} ({var*100:.1f}%)")
-        
-        print(f"   Total (primeros {min(5, len(features))} componentes): {sum(pca.explained_variance_ratio_):.3f} ({sum(pca.explained_variance_ratio_)*100:.1f}%)")
-        
-        # Visualizar PCA vs LDA
-        fig, axes = plt.subplots(1, 2, figsize=(18, 8))
-        
-        # Gráfico PCA
-        sujetos = sorted(df['Subject'].unique())
-        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8']
-        
-        for idx, suj in enumerate(sujetos):
-            mask = df['Subject'] == suj
-            axes[0].scatter(
-                X_pca[mask, 0], X_pca[mask, 1],
-                label=f'{suj} (n={sum(mask)})',
-                alpha=0.6,
-                s=50,
-                color=colors[idx % len(colors)]
-            )
-        
-        axes[0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]*100:.1f}% varianza)', fontsize=12, fontweight='bold')
-        axes[0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]*100:.1f}% varianza)', fontsize=12, fontweight='bold')
-        axes[0].set_title('PCA: Proyección de Datos', fontsize=14, fontweight='bold')
-        axes[0].legend()
-        axes[0].grid(True, alpha=0.3)
-        
-        # Gráfico comparativo de varianza explicada
-        componentes = range(1, len(pca.explained_variance_ratio_) + 1)
-        axes[1].bar(componentes, pca.explained_variance_ratio_, alpha=0.7, color='#45B7D1')
-        axes[1].plot(componentes, np.cumsum(pca.explained_variance_ratio_), 'ro-', linewidth=2, markersize=8)
-        axes[1].set_xlabel('Componente Principal', fontsize=12, fontweight='bold')
-        axes[1].set_ylabel('Varianza Explicada', fontsize=12, fontweight='bold')
-        axes[1].set_title('Varianza Acumulada PCA', fontsize=14, fontweight='bold')
-        axes[1].grid(True, alpha=0.3)
-        axes[1].set_xticks(componentes)
-        
-        plt.tight_layout()
-        plt.show()
-        
-        print("\n" + "="*70)
-        print("✅ ANÁLISIS COMPLETADO EXITOSAMENTE")
-        print("="*70)
-        print("\n📋 RESUMEN EJECUTIVO:")
-        print("-" * 50)
-        
-        # Resumen final
-        sujetos_count = len(df['Subject'].unique())
-        muestras_total = len(df)
-        
-        print(f"   • Sujetos analizados: {sujetos_count}")
-        print(f"   • Muestras totales: {muestras_total}")
-        print(f"   • Métricas consideradas: {len(features)}")
-        
-        # Calcular accuracy promedio si hay modelo entrenado
-        if 'clf' in locals():
-            y_pred_full = clf.predict(X_scaled)
-            accuracy = np.mean(y_pred_full == df['Subject'].values)
-            print(f"   • Precisión estimada: {accuracy:.3f} ({accuracy*100:.1f}%)")
-        
-        print("\n🔍 RECOMENDACIONES:")
-        print("   1. Las métricas Main Sequence son las más discriminantes")
-        print("   2. Considere aumentar el tamaño de ventana para reducir ruido")
-        print("   3. Verifique la calidad de tracking en muestras confusas")
-        print("   4. Combine múltiples ventanas por sujeto para mejor precisión")
-        
-        print("\n" + "="*70)
+        if importancias is not None:
+            # 4. Análisis de perfiles por sujeto
+            perfiles = analizar_perfil_por_sujeto(df, features, importancias)
+            
+            # 5. Análisis de confusiones
+            confusiones, aciertos, X_test, y_test, y_pred, clf = analizar_confusiones(df, features)
+            
+            # 6. Comparar casos extremos
+            if confusiones and aciertos:
+                comparar_casos_extremos(df, features, confusiones, aciertos, X_test, y_test)
+            else:
+                print("\n⚠️  No hay suficientes confusiones para análisis de casos extremos")
+            
+            # 7. Visualización LDA mejorada
+            visualizar_lda_mejorado(df, features)
+            
+            # 8. Análisis PCA
+            print("\n" + "="*70)
+            print("📊 ANÁLISIS PCA COMPLEMENTARIO")
+            print("="*70)
+            
+            pca = PCA(n_components=min(5, len(features)))
+            X_pca = pca.fit_transform(X_scaled)
+            
+            print(f"\n📈 Varianza Explicada por Componentes PCA:")
+            for i, var in enumerate(pca.explained_variance_ratio_):
+                print(f"   PC{i+1}: {var:.3f} ({var*100:.1f}%)")
+            
+            print(f"   Total (primeros {min(5, len(features))} componentes): {sum(pca.explained_variance_ratio_):.3f} ({sum(pca.explained_variance_ratio_)*100:.1f}%)")
+            
+            # Visualizar PCA vs LDA
+            fig, axes = plt.subplots(1, 2, figsize=(18, 8))
+            
+            # Gráfico PCA
+            sujetos = sorted(df['Subject'].unique())
+            colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8']
+            
+            for idx, suj in enumerate(sujetos):
+                mask = df['Subject'] == suj
+                axes[0].scatter(
+                    X_pca[mask, 0], X_pca[mask, 1],
+                    label=f'{suj} (n={sum(mask)})',
+                    alpha=0.6,
+                    s=50,
+                    color=colors[idx % len(colors)]
+                )
+            
+            axes[0].set_xlabel(f'PC1 ({pca.explained_variance_ratio_[0]*100:.1f}% varianza)', fontsize=12, fontweight='bold')
+            axes[0].set_ylabel(f'PC2 ({pca.explained_variance_ratio_[1]*100:.1f}% varianza)', fontsize=12, fontweight='bold')
+            axes[0].set_title('PCA: Proyección de Datos', fontsize=14, fontweight='bold')
+            axes[0].legend()
+            axes[0].grid(True, alpha=0.3)
+            
+            # Gráfico varianza
+            componentes = range(1, len(pca.explained_variance_ratio_) + 1)
+            axes[1].bar(componentes, pca.explained_variance_ratio_, alpha=0.7, color='#45B7D1')
+            axes[1].plot(componentes, np.cumsum(pca.explained_variance_ratio_), 'ro-', linewidth=2, markersize=8)
+            axes[1].set_xlabel('Componente Principal', fontsize=12, fontweight='bold')
+            axes[1].set_ylabel('Varianza Explicada', fontsize=12, fontweight='bold')
+            axes[1].set_title('Varianza Acumulada PCA', fontsize=14, fontweight='bold')
+            axes[1].grid(True, alpha=0.3)
+            axes[1].set_xticks(componentes)
+            
+            plt.tight_layout()
+            plt.show()
+            
+            print("\n" + "="*70)
+            print("✅ ANÁLISIS COMPLETADO EXITOSAMENTE")
+            print("="*70)
+            
+            if 'clf' in locals():
+                y_pred_full = clf.predict(X_scaled)
+                accuracy = np.mean(y_pred_full == df['Subject'].values)
+                print(f"   • Precisión estimada global: {accuracy:.3f} ({accuracy*100:.1f}%)")
 
     else:
         print("❌ No se pudieron cargar datos. Verifique la ruta de archivos.")
