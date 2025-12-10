@@ -53,7 +53,7 @@ def video_to_gif_ffmpeg_alta_calidad(video_path, gif_path, fps=25, scale='1080:-
 # --- Ejemplo de Uso ---
 if __name__ == "__main__":
     # La ruta al archivo de video que quieres usar
-    input_video = r"C:\Users\Victor\Documents\Tesis3D\Videos\Coordenadas.mp4" 
+    input_video = r"c:\Users\Victor\Downloads\Venegas-Victor.mp4" 
     output_gif = "video_a_gif_alta_calidad.gif"
     
     # Usar la nueva función con los parámetros de alta calidad

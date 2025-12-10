@@ -10,11 +10,15 @@ from ultralytics import YOLO
 # ==========================================
 #      CONFIGURACIÓN DE CONTROL (USER)
 # ==========================================
-ENABLE_IRIS_PROCESSING = False   # True: Calcula iris. False: Solo pupila (más rápido).
-SHOW_VISUALIZATION = True       # True: Muestra ventana. False: Modo rápido.
+# Estas variables ahora se configurarán desde main.py
+ENABLE_IRIS_PROCESSING = False
+SHOW_VISUALIZATION = False
+YOLO_MIN_CONFIDENCE = 0.7
+PUPIL_FIXED_THRESHOLD = 20
+MAX_INTERSECTION_DISTANCE = 10
 
 # Configuración de Limpieza de Parpadeos
-BLINK_PADDING_FRAMES = 3         # Cuántos frames borrar antes y después de un parpadeo
+BLINK_PADDING_FRAMES = 3
 
 # ==========================================
 
@@ -34,12 +38,9 @@ YOLO_MODEL_PATH = os.path.join(BASE_DIR, "models", "best.pt")
 RETRAIN_FRAMES_DIR = os.path.join(BASE_DIR, "frames_para_retrain")
 
 # --- PARÁMETROS YOLO ---
-YOLO_MIN_CONFIDENCE = 0.5  
 YOLO_ROI_EXPANSION_PX = 5 
 
 # --- UMBRALES ---
-PUPIL_FIXED_THRESHOLD = 20
-MAX_INTERSECTION_DISTANCE = 10
 MAX_PUPIL_JUMP_DISTANCE = 120
 MAX_LOST_TRACK_FRAMES = 6
 
@@ -77,10 +78,29 @@ except Exception as e:
     model = None
 
 
+# --- FUNCIÓN PARA ACTUALIZAR CONFIGURACIÓN DESDE MAIN ---
+def set_config(enable_iris=None, show_viz=None, yolo_conf=None, pupil_thresh=None, max_intersect=None):
+    """
+    Actualiza las variables de configuración globales.
+    """
+    global ENABLE_IRIS_PROCESSING, SHOW_VISUALIZATION, YOLO_MIN_CONFIDENCE
+    global PUPIL_FIXED_THRESHOLD, MAX_INTERSECTION_DISTANCE
+    
+    if enable_iris is not None:
+        ENABLE_IRIS_PROCESSING = enable_iris
+    if show_viz is not None:
+        SHOW_VISUALIZATION = show_viz
+    if yolo_conf is not None:
+        YOLO_MIN_CONFIDENCE = yolo_conf
+    if pupil_thresh is not None:
+        PUPIL_FIXED_THRESHOLD = pupil_thresh
+    if max_intersect is not None:
+        MAX_INTERSECTION_DISTANCE = max_intersect
+
+
 # --- FUNCIONES DE PROCESAMIENTO ---
 
 def crop_to_aspect_ratio(image, width=320, height=240):
-    # Si la imagen ya tiene el tamaño exacto, la devolvemos inmediatamente.
     if image.shape[1] == width and image.shape[0] == height:
         return image
 
@@ -89,12 +109,10 @@ def crop_to_aspect_ratio(image, width=320, height=240):
     current_ratio = current_width / current_height
 
     if current_ratio > desired_ratio:
-        # La imagen es muy ancha (ej. 16:9): Recortar los lados
         new_width = int(desired_ratio * current_height)
         offset = (current_width - new_width) // 2
         cropped_img = image[:, offset:offset + new_width]
     else:
-        # La imagen es muy alta: Recortar arriba y abajo
         new_height = int(current_width / desired_ratio)
         offset = (current_height - new_height) // 2
         cropped_img = image[offset:offset + new_height, :]
@@ -168,7 +186,7 @@ def process_frames(frame, gray_frame_clahe):
                     max_conf = box.conf[0]
                     best_box = box
         
-        if best_box is not None: 
+        if best_box is not None and max_conf >= YOLO_MIN_CONFIDENCE: 
             x1_raw, y1_raw, x2_raw, y2_raw = best_box.xyxy[0].cpu().numpy().astype(int)
             x1_raw_exp = x1_raw - YOLO_ROI_EXPANSION_PX
             y1_raw_exp = y1_raw - YOLO_ROI_EXPANSION_PX
@@ -206,8 +224,6 @@ def process_frames(frame, gray_frame_clahe):
 
         if final_rotated_rect is not None:
             center_x_raw, center_y_raw = map(int, final_rotated_rect[0])
-            
-            # Asignación directa (Raw Data)
             center_x, center_y = center_x_raw, center_y_raw
             
             # --- PROCESAMIENTO DE IRIS ---
@@ -316,7 +332,7 @@ def process_frames(frame, gray_frame_clahe):
                         pupil_center = final_rotated_rect[0]
                         smoothed_iris_ellipse = (pupil_center, current_fitted_ellipse[1], current_fitted_ellipse[2])
 
-            # --- FILTRO 3: TEMPORAL (Solo para validación de saltos grandes) ---
+            # --- FILTRO 3: TEMPORAL ---
             new_pupil_center = (center_x, center_y)
             if last_known_pupil_center is None:
                 is_detection_temporally_stable = True
@@ -370,7 +386,6 @@ def process_frames(frame, gray_frame_clahe):
     # --- VISUALIZACIÓN ---
     if SHOW_VISUALIZATION:
         if is_detection_temporally_stable and dist_from_sphere_center <= max_observed_distance:
-            # Bbox y ROI
             (bx1, by1, bx2, by2) = expanded_bbox
             if best_box is not None:
                 cv2.rectangle(frame, (bx1, by1), (bx2, by2), (255, 0, 0), 1)
@@ -381,7 +396,6 @@ def process_frames(frame, gray_frame_clahe):
             ex = int(model_center_average[0] + 2 * dx); ey = int(model_center_average[1] + 2 * dy)
             cv2.line(frame, (center_x, center_y), (ex, ey), (200, 255, 0), 3)
 
-            # Texto de Gaze
             if data_dict["valid_deteccion"]:
                 origin_text = f"Origin: ({data_dict['sphere_center_x']:.2f}, {data_dict['sphere_center_y']:.2f}, {data_dict['sphere_center_z']:.2f})"
                 dir_text = f"Direction: ({data_dict['gaze_x']:.2f}, {data_dict['gaze_y']:.2f}, {data_dict['gaze_z']:.2f})"
@@ -394,7 +408,6 @@ def process_frames(frame, gray_frame_clahe):
         if smoothed_iris_ellipse[1][0] > 0 and smoothed_iris_ellipse[1][1] > 0:
             cv2.ellipse(frame, smoothed_iris_ellipse, (255, 0, 255), 2)
         
-        # Estado detección
         if data_dict["valid_deteccion"]:
             status_text = "PUPILA DETECTADA"
             status_color = (0, 255, 0)
@@ -502,7 +515,6 @@ def apply_blink_cleaning(rows, padding=3):
     como inválidos para eliminar artefactos del párpado.
     """
     n = len(rows)
-    # El índice 3 corresponde a 'valid_deteccion' en la lista 'row'
     invalid_indices = {i for i, row in enumerate(rows) if not row[3]}
     
     if not invalid_indices:
@@ -517,7 +529,7 @@ def apply_blink_cleaning(rows, padding=3):
             
     count = 0
     for idx in indices_to_invalidate:
-        if rows[idx][3]: # Si era True, lo marcamos como False
+        if rows[idx][3]:
             rows[idx][3] = False
             count += 1
             
@@ -525,11 +537,9 @@ def apply_blink_cleaning(rows, padding=3):
 
 # --- FUNCIÓN DE PROCESAMIENTO DE VIDEO MODIFICADA ---
 def process_video_from_path(video_path, video_name, csv_path, prev):
-    # Variables globales
     global ray_lines, model_centers, prev_model_center_avg
     global last_known_pupil_center, frames_since_last_good_detection
     global smoothed_iris_ellipse 
-    # Eliminado 'stable_pupil_centers' para evitar errores
 
     ray_lines, model_centers = [], []
     
@@ -547,7 +557,6 @@ def process_video_from_path(video_path, video_name, csv_path, prev):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened(): print(f"Error opening video file {video_path}"); return
     
-    # --- CORRECCIÓN DE FPS (CLAVE 1) ---
     REAL_FPS = 120.0 
     fps = REAL_FPS 
     
@@ -569,7 +578,6 @@ def process_video_from_path(video_path, video_name, csv_path, prev):
         "contour_area",
     ]
     
-    # BUFFER DE MEMORIA PARA LIMPIEZA POST-PROCESO
     all_csv_rows = []
 
     try:
@@ -579,13 +587,10 @@ def process_video_from_path(video_path, video_name, csv_path, prev):
             if not ret: break
             frame_counter += 1
             
-            # --- CORRECCIÓN DE TIMESTAMP (CLAVE 2) ---
             timestamp_ms = (frame_counter / fps) * 1000.0
             
-            # --- CORRECCIÓN DE IMAGEN (CLAVE 3) ---
             frame_recortado_limpio = crop_to_aspect_ratio(frame)
             
-            # Procesamos el frame
             data = process_frame(frame_recortado_limpio.copy())
             
             if not data.get("valid_deteccion", False):
@@ -617,10 +622,8 @@ def process_video_from_path(video_path, video_name, csv_path, prev):
                 f"{data.get('contour_area', ''):.1f}" if data.get('contour_area') is not None else '',
             ]
             
-            # EN LUGAR DE ESCRIBIR, GUARDAMOS EN RAM
             all_csv_rows.append(row)
             
-            # --- CONTROL DE VELOCIDAD/VISUALIZACIÓN ---
             if SHOW_VISUALIZATION:
                 processing_duration_ms = (time.time() - start_time) * 1000
                 wait_time = max(1, frame_delay - int(processing_duration_ms))
@@ -631,7 +634,6 @@ def process_video_from_path(video_path, video_name, csv_path, prev):
                 if frame_counter % 100 == 0:
                     print(f"Frame {frame_counter} procesado...")
 
-        # --- FASE DE LIMPIEZA Y ESCRITURA ---
         print("   -> Aplicando limpieza de parpadeos...")
         clean_rows, cleaned_count = apply_blink_cleaning(all_csv_rows, padding=BLINK_PADDING_FRAMES)
         print(f"   -> {cleaned_count} frames de artefactos invalidados.")
