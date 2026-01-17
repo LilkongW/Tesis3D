@@ -1,0 +1,4 @@
+REPORTE INDIVIDUAL: Tarde
+Exactitud: 40.00%
+Confianza: 50.53%
+Geometría más cercana: P5 (Dist: 0.5465)

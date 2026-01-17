@@ -29,7 +29,7 @@ def main():
     prev = (150, 170)  # Centro inicial del modelo (ancho, alto)
     
     EXP_NUM = 1        # Número de experimento
-    NOMBRE = "Stephanie"  # Nombre del sujeto VictoriaRoso, Vielma, Stephanie, Sanchez
+    NOMBRE = "test"  # Nombre del sujeto VictoriaRoso, Vielma, Stephanie, Sanchez
     
     # Ruta de videos - compatible con Windows y Linux
     VIDEO_FOLDER_PATH = os.path.join("Videos", f"Experimento_{EXP_NUM}", NOMBRE)

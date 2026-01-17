@@ -1,0 +1,4 @@
+REPORTE INDIVIDUAL: Mañana
+Exactitud: 100.00%
+Confianza: 92.21%
+Geometría más cercana: P11 (Dist: 0.0000)

@@ -266,7 +266,7 @@ class BiometricPipeline:
 
     def run(self):
         print("="*70)
-        print(f"🧬 PIPELINE BIOMÉTRICO v6: JOYAS DE LA CORONA (Fractal + Slope + PupilVel)")
+        print("🧬 PIPELINE BIOMÉTRICO v6: JOYAS DE LA CORONA (Fractal + Slope + PupilVel)")
         print("="*70)
         
         participant_dirs = [d for d in os.listdir(self.cfg['EXP_DIR']) 
@@ -348,11 +348,11 @@ class BiometricPipeline:
             os.makedirs(os.path.dirname(cons_path), exist_ok=True)
             df_all.to_csv(cons_path, index=False)
             
-            print(f"\n✅ DATASET GENERADO CON ÉXITO")
-            print(f"📊 Nuevas métricas integradas:")
-            print(f"   • Main_Seq_Slope (Biomecánica)")
-            print(f"   • Pupil_Vel_Max (SNA)")
-            print(f"   • Fractal_Dim (Estrategia Cognitiva)")
+            print("\n✅ DATASET GENERADO CON ÉXITO")
+            print("📊 Nuevas métricas integradas:")
+            print("   • Main_Seq_Slope (Biomecánica)")
+            print("   • Pupil_Vel_Max (SNA)")
+            print("   • Fractal_Dim (Estrategia Cognitiva)")
 
 if __name__ == "__main__":
     pipeline = BiometricPipeline(CONFIG)
