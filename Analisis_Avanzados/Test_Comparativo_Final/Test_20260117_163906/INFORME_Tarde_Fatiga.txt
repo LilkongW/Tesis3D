@@ -1,0 +1,3 @@
+REPORTE: Tarde_Fatiga
+Acc: 37.50%
+Conf: 50.91%

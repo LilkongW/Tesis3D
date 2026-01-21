@@ -49,8 +49,8 @@ plt.plot(
 plt.gca().invert_xaxis()  
 plt.gca().invert_yaxis()  
 
-plt.title(f'Mapa de Calor Suavizado (Ventana: {window_size})')
-plt.xlabel('Gaze X (Suavizado)')
-plt.ylabel('Gaze Y (Suavizado)')
+plt.title('Mapa de Calor con Trayectoria Suavizada')
+plt.xlabel('Posicion X')
+plt.ylabel('Posicion Y')
 
 plt.show()
