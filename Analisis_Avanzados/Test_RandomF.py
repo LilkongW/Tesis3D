@@ -257,7 +257,7 @@ def ejecutar_analisis_completo(df_train, df_manana, df_tarde):
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train_w)
 
-    clf1 = RandomForestClassifier(n_estimators=300, random_state=42)
+    clf1 = RandomForestClassifier(n_estimators=300, criterion='gini', max_depth=50, bootstrap=False, min_samples_split=2, min_samples_leaf=1, max_features='sqrt', random_state=42)
     clf2 = SVC(probability=True, kernel='rbf', C=50, gamma='scale', random_state=42)
     clf3 = GradientBoostingClassifier(n_estimators=100, random_state=42)
     eclf = VotingClassifier(estimators=[('rf', clf1), ('svm', clf2), ('gb', clf3)], voting='soft')
@@ -326,7 +326,7 @@ def ejecutar_analisis_completo(df_train, df_manana, df_tarde):
     plt.tight_layout()
     plt.savefig(os.path.join(OUTPUT_DIR, "COMPARATIVA_FINAL_MATRICES.png"), dpi=300)
     plt.close()
-    print(f"   ✅ Gráfico generado: COMPARATIVA_FINAL_MATRICES.png")
+    print("   ✅ Gráfico generado: COMPARATIVA_FINAL_MATRICES.png")
 
 if __name__ == "__main__":
     df_train, df_manana, df_tarde = cargar_y_preparar_datasets()
@@ -335,5 +335,5 @@ if __name__ == "__main__":
         df_train, df_manana, df_tarde = anonimizar_todos(df_train, df_manana, df_tarde)
         ejecutar_analisis_completo(df_train, df_manana, df_tarde)
         
-        print(f"\n🏁 PROCESO COMPLETADO.")
+        print("\n🏁 PROCESO COMPLETADO.")
         print(f"📂 Resultados en: {OUTPUT_DIR}")

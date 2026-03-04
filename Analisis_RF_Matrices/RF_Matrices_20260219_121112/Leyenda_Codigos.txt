@@ -1,0 +1,35 @@
+
+--- Configuración: 5 sujetos ---
+P1 = Andrews
+P2 = Rodelo
+P3 = Venegas
+P4 = Victoria
+P5 = Victoriaroso
+
+--- Configuración: 10 sujetos ---
+P1 = Andrews
+P2 = Arteaga
+P3 = Karolain
+P4 = Leo
+P5 = Roygel
+P6 = Stephanie
+P7 = Venegas
+P8 = Victor
+P9 = Victoria
+P10 = Victoriaroso
+
+--- Configuración: 14 sujetos ---
+P1 = Andrews
+P2 = Arteaga
+P3 = Josuep
+P4 = Karolain
+P5 = Leo
+P6 = Rodelo
+P7 = Roygel
+P8 = Samir
+P9 = Stephanie
+P10 = Venegas
+P11 = Victor
+P12 = Victoria
+P13 = Victoriaroso
+P14 = Vielma

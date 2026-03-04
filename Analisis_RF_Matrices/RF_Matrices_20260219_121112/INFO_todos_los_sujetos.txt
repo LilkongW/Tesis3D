@@ -1,0 +1,16 @@
+CONFIGURACIÓN: Todos los sujetos
+Sujetos: ['Andrews', 'Arteaga', 'Josuep', 'Karolain', 'Leo', 'Rodelo', 'Roygel', 'Samir', 'Stephanie', 'Venegas', 'Victor', 'Victoria', 'Victoriaroso', 'Vielma']
+Número de sujetos: 14
+Muestras totales: 2237
+Accuracy: 82.59%
+
+Hiperparámetros:
+  n_estimators: 300
+  min_samples_split: 2
+  min_samples_leaf: 1
+  max_features: sqrt
+  max_depth: 50
+  criterion: gini
+  bootstrap: False
+  random_state: 42
+  n_jobs: -1

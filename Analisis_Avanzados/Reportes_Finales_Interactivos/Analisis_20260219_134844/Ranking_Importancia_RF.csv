@@ -1,0 +1,16 @@
+Metrica_Original,Metrica_Esp,Importancia
+Pupil_Mean,Diámetro Pupilar Prom.,0.17589808317223704
+Gaze_Z_Mean,Gaze Z Mean,0.12213600550105226
+Jerk_Max,Jerk Max,0.09420418110211334
+Acc_Max,Aceleración Máx.,0.07766667012340037
+Pupil_Vel_Max,Vel. Máx. Pupila,0.07350896777454087
+Vel_Mean,Velocidad Ocular Prom.,0.06068942085156027
+Velocity_Transition_Smoothness,Suavidad Transición,0.06002330538192546
+Pupil_Std,Variabilidad Pupilar,0.056137562654894585
+Jerk_Mean,Jerk (Sacudida) Prom.,0.05020257384740184
+Pupil_CV,Pupil CV,0.04934573880769795
+Fixation_Vel_Mean,Vel. en Fijaciones,0.04351151467395862
+Main_Seq_Slope,Pendiente Secuencia Princ.,0.0392041500289311
+Fractal_Dim,Dimensión Fractal,0.03724798404370378
+Microsaccade_Rate,Tasa Microsacadas,0.03685640363947525
+Saccade_Rate,Saccade Rate,0.023367438397107258

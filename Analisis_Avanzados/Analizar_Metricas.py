@@ -150,25 +150,61 @@ def analizar_importancia_features(df_in):
     # 3. Crear DF para visualización (Con Traducción)
     df_imp = pd.DataFrame({
         'Metrica_Original': original_feature_names,
-        'Metrica_Esp': [traducir(m) for m in original_feature_names], # Columna traducida
+        'Metrica_Esp': [traducir(m) for m in original_feature_names],
         'Importancia': importances
     }).sort_values(by='Importancia', ascending=False)
     
     # Guardar CSV con el ranking
     df_imp.to_csv(os.path.join(OUTPUT_DIR, "Ranking_Importancia_RF.csv"), index=False)
     
-    # 4. Graficar Top 15 (Usando nombres en Español)
-    plt.figure(figsize=(12, 8)) # Un poco más ancho para nombres largos
-    sns.barplot(data=df_imp.head(15), x='Importancia', y='Metrica_Esp', palette='magma')
+    # 4. Graficar Top 15 con estilo profesional
+    plt.figure(figsize=(14, 9))  # Figura más grande
+    sns.set_style("whitegrid")   # Fondo con cuadrícula sutil
     
-    plt.title('Top 15 Métricas que distinguen a los usuarios\n(Importancia de Gini - Random Forest)', fontsize=14, weight='bold')
-    plt.xlabel('Importancia Relativa')
-    plt.ylabel('Métrica Biométrica')
+    # Usar paleta de colores profesional (coolwarm, viridis, plasma...)
+    ax = sns.barplot(
+        data=df_imp.head(15), 
+        x='Importancia', 
+        y='Metrica_Esp', 
+        palette='viridis',      # Paleta más profesional
+        edgecolor='black',      # Borde negro para las barras
+        linewidth=0.6
+    )
+    
+    # Ajustar tamaño de fuentes
+    plt.title(
+        'Top 15 métricas que distinguen a los usuarios\n(Importancia de Gini - Random Forest)', 
+        fontsize=18, 
+        weight='bold', 
+        pad=20
+    )
+    plt.xlabel('Importancia relativa', fontsize=22, labelpad=10)
+    plt.ylabel('Métrica biométrica', fontsize=22, labelpad=10)
+    
+    # Aumentar tamaño de las etiquetas de los ejes
+    plt.xticks(fontsize=18)
+    plt.yticks(fontsize=18)
+    
+    # Añadir valores al final de cada barra (opcional, para más claridad)
+    for i, (_, row) in enumerate(df_imp.head(15).iterrows()):
+        ax.text(
+            row['Importancia'] + 0.001, i, 
+            f'{row["Importancia"]:.3f}', 
+            va='center', fontsize=12, color='black'
+        )
+    
+    # Eliminar bordes innecesarios (spines)
+    sns.despine(left=False, bottom=False)
+    
     plt.tight_layout()
-    plt.savefig(os.path.join(OUTPUT_DIR, "Ranking_Feature_Importance.png"), dpi=300)
+    plt.savefig(
+        os.path.join(OUTPUT_DIR, "Ranking_Feature_Importance.png"), 
+        dpi=300, 
+        bbox_inches='tight'
+    )
     plt.close()
     
-    # Retornamos los nombres ORIGINALES (Inglés) para que el código pueda filtrar el DF
+    # Retornamos los nombres ORIGINALES (Inglés) para filtrar
     top_metrics_english = df_imp['Metrica_Original'].head(12).tolist()
     
     print("✅ Ranking generado. Top 3 métricas:")

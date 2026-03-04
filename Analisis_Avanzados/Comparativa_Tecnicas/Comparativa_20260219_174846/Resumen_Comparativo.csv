@@ -1,0 +1,4 @@
+Técnica,Tipo,Métrica_1,Valor_1,Métrica_2,Valor_2,Métrica_3,Valor_3,Métrica_4,Valor_4,Observaciones
+KMeans,Clustering (no supervisado),ARI,0.1188,NMI,0.2605,Silhouette,0.1242,Davies-Bouldin,1.6486,k=14 clústeres
+DBSCAN,Clustering (no supervisado),ARI,0.0291,NMI,0.1963,Silhouette,0.2571,Davies-Bouldin,1.2795,2 clústeres | 89.4% ruido
+Random Forest,Clasificación (supervisado),Accuracy (test),0.8944,F1-score macro,0.8861,CV mean (5-fold),0.8728,CV std,0.0111,"n_estimators=300, max_depth=50, criterion=gini"
